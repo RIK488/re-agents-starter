@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: R&D Agents Gateway
+  version: "1.0.0"
+servers:
+  - url: https://YOUR-PUBLIC-GATEWAY-URL
+security:
+  - ApiKeyAuth: []
+paths:
+  /tasks:
+    post:
+      operationId: submitTask
+      summary: Soumettre une tâche à un agent R&D
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, task]
+              properties:
+                agent_id:
+                  type: string
+                  enum: [coordinateur, chercheur, experimentateur, analyste, architecte, securite, documentariste]
+                task:
+                  type: string
+                  description: "But/opération demandée"
+                context:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Accusé de réception
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [accepted, queued, error] }
+                  task_id: { type: string }
+                  agent_id: { type: string }
+                  received_at: { type: string, format: date-time }
+  /results:
+    post:
+      operationId: pushResult
+      summary: Pousser un résultat d'agent (appelé par n8n/Workers)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id, agent_id, status]
+              properties:
+                task_id: { type: string }
+                agent_id:
+                  type: string
+                  enum: [coordinateur, chercheur, experimentateur, analyste, architecte, securite, documentariste]
+                status: { type: string, enum: [success, failed] }
+                metrics:
+                  type: object
+                  additionalProperties:
+                    type: number
+                artifacts:
+                  type: object
+                  additionalProperties: true
+                notes: { type: string }
+      responses:
+        "204": { description: OK }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
