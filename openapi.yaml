@@ -4,6 +4,8 @@ info:
   version: "1.0.0"
 servers:
   - url: https://rd-agents-starter.onrender.com
+    description: Passerelle publique R&D Agents
+
 security:
   - ApiKeyAuth: []
 paths:
