@@ -3,7 +3,7 @@ info:
   title: R&D Agents Gateway
   version: "1.0.0"
 servers:
-  - url: https://YOUR-PUBLIC-GATEWAY-URL
+  - url: https://rd-agents-starter.onrender.com
 security:
   - ApiKeyAuth: []
 paths:
