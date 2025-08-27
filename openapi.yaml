@@ -13,11 +13,17 @@ paths:
       operationId: submitTask
       summary: Soumettre une tâche à un agent R&D
       requestBody:
+          /tasks:
+    post:
+      operationId: submitTask
+      summary: Soumettre une tâche à un agent R&D
+      requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: true    # 👈 accepte des champs en plus
               required: [agent_id, task]
               properties:
                 agent_id:
