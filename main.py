@@ -114,4 +114,11 @@ async def push_result(result: ResultPayload, x_api_key: str | None = Header(None
     return Response(status_code=204)             # 204 No Content (OK)
     # (Option) si tu préfères un ACK JSON, renvoie plutôt :
     # return {"status": "received", "task_id": result.task_id, "agent_id": result.agent_id}
+@app.get("/status/{task_id}")
+async def get_status(task_id: str, x_api_key: str | None = Header(None)):
+    require_key(x_api_key)
+    data = RESULTS.get(task_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="No result for this task_id yet")
+    return data
 
