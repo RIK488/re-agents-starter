@@ -3,7 +3,7 @@ info:
   title: R&D Agents Gateway
   version: "1.0.0"
 servers:
-  - url: https://rd-agents-starter.onrender.com
+  - url: https://re-agents-starter.onrender.com
     description: Passerelle publique R&D Agents
 
 security:
