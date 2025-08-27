@@ -9,6 +9,13 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
+# --- AJOUT POUR STATUS ---
+from fastapi import Header, HTTPException, Response
+from typing import Dict, Any
+
+# stockage simple en mémoire (persistance optionnelle via Redis si besoin)
+RESULTS: Dict[str, Dict[str, Any]] = {}
+# --- FIN AJOUT ---
 
 API_KEY = os.getenv("AGENTS_API_KEY", "dev-key-change-me")
 
@@ -98,9 +105,13 @@ async def submit_task(payload: TaskPayload, x_api_key: Optional[str] = Header(No
         details={"forward_to": AGENT_ROUTES[payload.agent_id]},
     )
 
-@app.post("/results", status_code=204)
-async def push_result(result: ResultPayload, x_api_key: Optional[str] = Header(None)):
+@app.post("/results")
+async def push_result(result: ResultPayload, x_api_key: str | None = Header(None)):
     require_key(x_api_key)
-    # Hook: persist to DB here if needed
-    print("[result]", result.model_dump())
-    return
+    data = result.model_dump()
+    RESULTS[result.task_id] = data               # <— mémorise pour /status
+    print("[result]", data)
+    return Response(status_code=204)             # 204 No Content (OK)
+    # (Option) si tu préfères un ACK JSON, renvoie plutôt :
+    # return {"status": "received", "task_id": result.task_id, "agent_id": result.agent_id}
+
