@@ -74,11 +74,12 @@ paths:
       responses:
         "204": { description: OK }
 components:
-  # 👇 Important: schemas doit être un OBJET (ici vide), pas une liste
-  schemas: {}
+  schemas: {}  # (garde ce bloc vide)
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
+security:
+  - ApiKeyAuth: []
 
