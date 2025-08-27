@@ -4,8 +4,7 @@ info:
   version: "1.0.0"
 servers:
   - url: https://re-agents-starter.onrender.com
-    description: Passerelle publique R&D Agents
-
+    description: Passerelle publique R&D Agents (FastAPI)
 security:
   - ApiKeyAuth: []
 paths:
@@ -61,8 +60,7 @@ paths:
                 status: { type: string, enum: [success, failed] }
                 metrics:
                   type: object
-                  additionalProperties:
-                    type: number
+                  additionalProperties: { type: number }
                 artifacts:
                   type: object
                   additionalProperties: true
@@ -70,8 +68,11 @@ paths:
       responses:
         "204": { description: OK }
 components:
+  # 👇 Important: schemas doit être un OBJET (ici vide), pas une liste
+  schemas: {}
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
+
