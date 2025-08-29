@@ -113,6 +113,18 @@ async def push_result(result: ResultPayload, x_api_key: str | None = Header(None
     print("[result]", data)
     return Response(status_code=204)             # 204 No Content (OK)
     # (Option) si tu préfères un ACK JSON, renvoie plutôt :
+@app.post("/results-json")
+async def push_result_json(result: ResultPayload, x_api_key: str | None = Header(None)):
+    require_key(x_api_key)
+    data = result.model_dump()
+    RESULTS[result.task_id] = data  # mémorise pour /status
+    print("[result-json]", data)
+    return {
+        "status": "received",
+        "task_id": result.task_id,
+        "agent_id": result.agent_id,
+        "stored": True
+    }
     # return {"status": "received", "task_id": result.task_id, "agent_id": result.agent_id}
 @app.get("/status/{task_id}")
 async def get_status(task_id: str, x_api_key: str | None = Header(None)):
