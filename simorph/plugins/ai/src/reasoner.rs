@@ -48,9 +48,15 @@ impl Expr {
         match self {
             Expr::Num(n) => *n,
             _ if budget == 0 => 0,
-            Expr::Add(a, b) => a.bounded(budget - 1, steps).wrapping_add(b.bounded(budget - 1, steps)),
-            Expr::Sub(a, b) => a.bounded(budget - 1, steps).wrapping_sub(b.bounded(budget - 1, steps)),
-            Expr::Mul(a, b) => a.bounded(budget - 1, steps).wrapping_mul(b.bounded(budget - 1, steps)),
+            Expr::Add(a, b) => a
+                .bounded(budget - 1, steps)
+                .wrapping_add(b.bounded(budget - 1, steps)),
+            Expr::Sub(a, b) => a
+                .bounded(budget - 1, steps)
+                .wrapping_sub(b.bounded(budget - 1, steps)),
+            Expr::Mul(a, b) => a
+                .bounded(budget - 1, steps)
+                .wrapping_mul(b.bounded(budget - 1, steps)),
         }
     }
 }
@@ -73,7 +79,6 @@ impl ArithmeticReasoner {
             .with_outputs(vec![
                 Port::scalar("accuracy", "1"),
                 Port::scalar("mean_steps", "1"),
-                Port::scalar("latency_per_task", "s"),
             ])
             .with_assumptions(&["tasks are integer expression trees of uniform depth; a task is solved only if the exact value is produced"])
             .with_validation(ValidationProtocol {
@@ -122,7 +127,7 @@ impl Component for ArithmeticReasoner {
         Ok(TaskResult::new(req, EvidenceLevel::Computed)
             .output("accuracy", correct as f64 / n as f64)
             .output("mean_steps", steps as f64 / n as f64)
-            .output("latency_per_task", lat))
+            .metric("latency_per_task", lat))
     }
 }
 
@@ -134,7 +139,18 @@ mod tests {
     fn depth_trades_accuracy_for_steps() {
         let c = ArithmeticReasoner::new();
         let ctl = ExecutionControl::default();
-        let run = |d: f64| run_component(&c, &TaskRequest::new(c.m.id).input("max_depth", d).input("task_depth", 5).input("n_tasks", 300).input("task_seed", 3), &ctl).unwrap();
+        let run = |d: f64| {
+            run_component(
+                &c,
+                &TaskRequest::new(c.m.id)
+                    .input("max_depth", d)
+                    .input("task_depth", 5)
+                    .input("n_tasks", 300)
+                    .input("task_seed", 3),
+                &ctl,
+            )
+            .unwrap()
+        };
         let full = run(6.0);
         let shallow = run(2.0);
         assert_eq!(full.get_f64("accuracy").unwrap(), 1.0);

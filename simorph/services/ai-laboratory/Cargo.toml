@@ -3,6 +3,18 @@ name = "simorph-svc-ai-laboratory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "SIMORPH AI improvement laboratory: sealed evaluation suites, candidate improvement loop with independent validation, acceptance/rejection, rollback, and self-improvement gating."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-validation = { path = "../../crates/simorph-validation" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+simorph-plugin-ai = { path = "../../plugins/ai" }

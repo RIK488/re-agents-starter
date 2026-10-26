@@ -78,7 +78,11 @@ impl Component for BanditAgent {
                     }
                     b
                 };
-                let r = if rng.gen::<f64>() < probs[arm] { 1.0 } else { 0.0 };
+                let r = if rng.gen::<f64>() < probs[arm] {
+                    1.0
+                } else {
+                    0.0
+                };
                 n[arm] += 1;
                 q[arm] += (r - q[arm]) / n[arm] as f64;
                 total_reward += r;
@@ -101,7 +105,20 @@ mod tests {
         let c = BanditAgent::new();
         let ctl = ExecutionControl::default();
         let run = |eps: f64| {
-            run_component(&c, &TaskRequest::new(c.m.id).seed(42).input("epsilon", eps).input("optimistic_init", 0.0).input("arm_probabilities", json!([0.2, 0.5, 0.8])).input("horizon", 500).input("episodes", 40), &ctl).unwrap().get_f64("mean_regret").unwrap()
+            run_component(
+                &c,
+                &TaskRequest::new(c.m.id)
+                    .seed(42)
+                    .input("epsilon", eps)
+                    .input("optimistic_init", 0.0)
+                    .input("arm_probabilities", json!([0.2, 0.5, 0.8]))
+                    .input("horizon", 500)
+                    .input("episodes", 40),
+                &ctl,
+            )
+            .unwrap()
+            .get_f64("mean_regret")
+            .unwrap()
         };
         let greedy = run(0.0);
         let explore = run(0.1);
