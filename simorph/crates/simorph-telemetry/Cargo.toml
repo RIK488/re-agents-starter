@@ -3,6 +3,13 @@ name = "simorph-telemetry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Tracing initialisation, metrics registry and exporters for SIMORPH."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+parking_lot.workspace = true
+indexmap.workspace = true

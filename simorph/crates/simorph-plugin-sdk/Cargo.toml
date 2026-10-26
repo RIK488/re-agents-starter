@@ -3,6 +3,12 @@ name = "simorph-plugin-sdk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Helpers for SIMORPH component authors: builders, discovery sets, stdio protocol server."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true

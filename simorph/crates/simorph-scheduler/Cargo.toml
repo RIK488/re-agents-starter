@@ -3,6 +3,14 @@ name = "simorph-scheduler"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Resource-aware DAG task scheduler for SIMORPH with retries, timeouts, cancellation and checkpoint/resume."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true

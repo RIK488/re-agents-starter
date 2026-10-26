@@ -3,6 +3,13 @@ name = "simorph-adapter-python-bridge"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Run Python scripts written with simorph_adapter as sandboxed SIMORPH components."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-execution = { path = "../../crates/simorph-execution" }
+simorph-security = { path = "../../crates/simorph-security" }
+serde_json.workspace = true
+
+[dev-dependencies]
+indexmap.workspace = true
