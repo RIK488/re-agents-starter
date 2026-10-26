@@ -1,0 +1,8 @@
+[package]
+name = "simorph-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+simorph-core = { path = "../../crates/simorph-core" }

@@ -1,0 +1,17 @@
+[package]
+name = "simorph-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH core contracts: identifiers, evidence levels, component manifest, problem specification, quantities, errors."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+sha2.workspace = true
+hex.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "simorph-units"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Dimensional analysis, unit parsing and conversion for SIMORPH."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+serde.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
