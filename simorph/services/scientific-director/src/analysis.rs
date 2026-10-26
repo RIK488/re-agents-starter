@@ -152,6 +152,27 @@ impl ProblemAnalysis {
     }
 }
 
+/// Whether `name` can be obtained from the knowns through a chain of
+/// catalogue components (bounded depth to avoid cycles).
+fn resolvable(
+    name: &str,
+    known: &BTreeSet<String>,
+    catalog: &dyn ComponentCatalog,
+    depth: usize,
+) -> bool {
+    if known.contains(name) {
+        return true;
+    }
+    if depth > 8 {
+        return false;
+    }
+    catalog.producers_of(name).iter().any(|m| {
+        m.input_schema
+            .iter()
+            .all(|p| p.name != name && resolvable(&p.name, known, catalog, depth + 1))
+    })
+}
+
 /// Analyse a problem against a catalogue.
 pub fn analyse(problem: &ProblemSpec, catalog: &dyn ComponentCatalog) -> Result<ProblemAnalysis> {
     problem.validate_structure()?;
@@ -312,25 +333,21 @@ pub fn analyse(problem: &ProblemSpec, catalog: &dyn ComponentCatalog) -> Result<
                 }
             }
             if cats.is_empty() {
-                // producers exist but inputs are missing
-                let producible_missing: Vec<String> = missing_all
+                // producers exist but inputs are missing: can the missing
+                // inputs be produced recursively from the knowns?
+                let unresolvable: Vec<String> = missing_all
                     .iter()
-                    .filter(|m| !catalog.producers_of(m).is_empty())
+                    .filter(|m| !resolvable(m, &known, catalog, 0))
                     .cloned()
                     .collect();
-                if !producible_missing.is_empty() && producible_missing.len() == missing_all.len() {
+                if unresolvable.is_empty() {
                     cats.push(QuantityCategory::RequiresModelling);
                     rationale.push_str("les entrées manquantes peuvent être produites par d'autres composants : chaînage de modèles requis");
                 } else {
                     cats.push(QuantityCategory::RequiresData);
                     rationale.push_str(&format!(
-                        "entrées sans valeur ni producteur : {}",
-                        missing_all
-                            .iter()
-                            .filter(|m| catalog.producers_of(m).is_empty())
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        "entrées sans valeur ni chaîne de production depuis les connus : {}",
+                        unresolvable.join(", ")
                     ));
                 }
             } else {
