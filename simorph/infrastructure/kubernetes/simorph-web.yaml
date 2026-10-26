@@ -1,0 +1,82 @@
+# Déploiement Kubernetes minimal (§10.3). Les secrets sont injectés par
+# Secret Kubernetes ; aucune valeur sensible dans ce manifeste.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simorph-web
+  labels: { app: simorph-web }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: simorph-web }
+  template:
+    metadata:
+      labels: { app: simorph-web }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: ghcr.io/rik488/simorph-web:latest
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: SIMORPH_BIND, value: "0.0.0.0:8080" }
+            - { name: SIMORPH_DATA, value: "/data" }
+            - name: SIMORPH_API_KEY
+              valueFrom: { secretKeyRef: { name: simorph-secrets, key: api-key } }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits: { cpu: "4", memory: "4Gi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: simorph-data }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: simorph-web }
+spec:
+  selector: { app: simorph-web }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: simorph-data }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 20Gi } }
+---
+# Exemple de job d'expérience isolé (file de travaux distribuée, §10.2) :
+# chaque run lourd peut être soumis comme Job avec ses propres limites.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: simorph-run-example }
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: run
+          image: ghcr.io/rik488/simorph-web:latest
+          command: ["simorph", "demo", "nanosat", "--out", "/data/run-example"]
+          resources:
+            limits: { cpu: "2", memory: "2Gi" }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: simorph-data }

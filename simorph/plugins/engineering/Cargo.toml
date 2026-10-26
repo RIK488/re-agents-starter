@@ -3,6 +3,8 @@ name = "simorph-plugin-engineering"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Cross-sector engineering, economics and operations models exposed through the SIMORPH component contract."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+serde_json.workspace = true

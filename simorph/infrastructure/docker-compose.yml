@@ -1,0 +1,62 @@
+# Exécution locale conteneurisée (§10.1). Les services optionnels sont des
+# intégrations prévues par l'audit open source ; le noyau fonctionne sans eux.
+services:
+  simorph-web:
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile
+    ports: ["8080:8080"]
+    environment:
+      SIMORPH_BIND: 0.0.0.0:8080
+      SIMORPH_DATA: /data
+      RUST_LOG: info
+    volumes:
+      - simorph-data:/data
+    # Isolation (§10.4) : pas de privilèges, système de fichiers racine en lecture seule.
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [simorph]
+
+  postgres:            # registre / archives (intégration prévue, fiche PostgreSQL)
+    image: postgres:16
+    profiles: [storage]
+    environment:
+      POSTGRES_DB: simorph
+      POSTGRES_USER: simorph
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    secrets: [pg_password]
+    volumes: [pg-data:/var/lib/postgresql/data]
+    networks: [simorph]
+
+  qdrant:              # mémoire vectorielle (intégration prévue, fiche Qdrant)
+    image: qdrant/qdrant:v1.12.4
+    profiles: [storage]
+    volumes: [qdrant-data:/qdrant/storage]
+    networks: [simorph]
+
+  prometheus:          # métriques exposées par simorph-telemetry (/metrics)
+    image: prom/prometheus:v2.55.1
+    profiles: [observability]
+    volumes: ["./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+    networks: [simorph]
+
+  otel-collector:      # traces OpenTelemetry (export OTLP prévu, ADR-0001)
+    image: otel/opentelemetry-collector:0.113.0
+    profiles: [observability]
+    networks: [simorph]
+
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt   # jamais commité ; voir SECURITY_MODEL.md
+
+volumes:
+  simorph-data: {}
+  pg-data: {}
+  qdrant-data: {}
+
+networks:
+  simorph:
+    driver: bridge

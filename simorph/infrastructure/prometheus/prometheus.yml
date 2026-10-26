@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: simorph
+    static_configs:
+      - targets: ["simorph-web:8080"]
+    metrics_path: /metrics
