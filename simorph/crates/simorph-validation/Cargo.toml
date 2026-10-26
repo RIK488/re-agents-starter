@@ -3,6 +3,18 @@ name = "simorph-validation"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Independent scientific validation engine for SIMORPH: dimensional, physical, numerical, reproducibility, statistical and reference checks; evidence classification; protected references."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+simorph-units = { path = "../simorph-units" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

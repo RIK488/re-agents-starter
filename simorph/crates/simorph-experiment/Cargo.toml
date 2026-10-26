@@ -3,6 +3,21 @@ name = "simorph-experiment"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Design of experiments, parallel experiment execution, reproduction, archiving and failure analysis for SIMORPH."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+simorph-provenance = { path = "../simorph-provenance" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
