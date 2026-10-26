@@ -325,21 +325,37 @@ impl ComponentManifest {
         self
     }
 
-    /// Structural self-check: ports must be unique and every port needs a unit.
+    /// Structural self-check: port names must be unique within inputs and
+    /// within outputs (the same name may appear on both sides, e.g. a
+    /// training component that reads and writes `weights`), and every port
+    /// needs a unit.  A name shared by an input and an output must carry
+    /// the same unit.
     pub fn validate_structure(&self) -> crate::Result<()> {
-        let mut seen = std::collections::HashSet::new();
-        for p in self.input_schema.iter().chain(self.output_schema.iter()) {
-            if p.unit.trim().is_empty() {
-                return Err(crate::SimorphError::InvalidInput(format!(
-                    "port `{}` of `{}` has no unit (use \"1\" for dimensionless)",
-                    p.name, self.name
-                )));
+        for (side, ports) in [("input", &self.input_schema), ("output", &self.output_schema)] {
+            let mut seen = std::collections::HashSet::new();
+            for p in ports {
+                if p.unit.trim().is_empty() {
+                    return Err(crate::SimorphError::InvalidInput(format!(
+                        "{side} port `{}` of `{}` has no unit (use \"1\" for dimensionless)",
+                        p.name, self.name
+                    )));
+                }
+                if !seen.insert(&p.name) {
+                    return Err(crate::SimorphError::InvalidInput(format!(
+                        "duplicate {side} port `{}` in `{}`",
+                        p.name, self.name
+                    )));
+                }
             }
-            if !seen.insert(&p.name) {
-                return Err(crate::SimorphError::InvalidInput(format!(
-                    "duplicate port `{}` in `{}`",
-                    p.name, self.name
-                )));
+        }
+        for i in &self.input_schema {
+            if let Some(o) = self.output_schema.iter().find(|o| o.name == i.name) {
+                if o.unit != i.unit {
+                    return Err(crate::SimorphError::InvalidInput(format!(
+                        "port `{}` of `{}` has unit `{}` as input and `{}` as output",
+                        i.name, self.name, i.unit, o.unit
+                    )));
+                }
             }
         }
         if self.name.is_empty() || self.version.is_empty() {
