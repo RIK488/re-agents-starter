@@ -3,6 +3,15 @@ name = "simorph-uncertainty"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Sampling, uncertainty propagation, sensitivity analysis and information value for SIMORPH."
 
 [dependencies]
-simorph-core = { path = "../../crates/simorph-core" }
+simorph-core = { path = "../simorph-core" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_distr.workspace = true
+rayon.workspace = true
+nalgebra.workspace = true
