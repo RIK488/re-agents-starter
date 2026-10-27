@@ -976,12 +976,7 @@ async fn agents_replay_route(
     Json(r): Json<ReplayReq>,
 ) -> ApiResult<serde_json::Value> {
     check_write(&s, &headers)?;
-    if r.session.is_empty()
-        || !r
-            .session
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() || c == '-')
-    {
+    if r.session.is_empty() || !r.session.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err(SimorphError::InvalidInput("session must be a session id".into()).into());
     }
     let st = s.clone();
@@ -995,7 +990,9 @@ async fn agents_replay_route(
         replay_agent_session(&st.workspace, &trace)
     })
     .await?;
-    Ok(Json(serde_json::to_value(&rep).map_err(SimorphError::from)?))
+    Ok(Json(
+        serde_json::to_value(&rep).map_err(SimorphError::from)?,
+    ))
 }
 
 /// Uploaded file (text content or base64 bytes), stored under

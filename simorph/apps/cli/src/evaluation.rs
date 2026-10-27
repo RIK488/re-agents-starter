@@ -74,6 +74,9 @@ mod tests {
         assert!(s.suites.iter().all(|x| x.seal_verified));
         assert_eq!(s.harnesses.len(), 4);
         // unavailable harnesses always carry the cause
-        assert!(s.harnesses.iter().all(|h| h.available || h.reason.is_some()));
+        assert!(s
+            .harnesses
+            .iter()
+            .all(|h| h.available || h.reason.is_some()));
     }
 }

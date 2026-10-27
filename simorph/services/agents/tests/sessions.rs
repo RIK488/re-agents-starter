@@ -1,6 +1,7 @@
 //! End-to-end multi-agent sessions.
 
 #[path = "../../../apps/cli/src/examples.rs"]
+#[allow(dead_code)]
 mod examples;
 
 use serde_json::json;

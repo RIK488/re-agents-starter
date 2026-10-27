@@ -151,7 +151,12 @@ impl Component for NanosatCosim {
             .sum();
         // Normalised by gross throughput ∫|V·I| dt: the net energy over an
         // orbit can be near zero, which would make a ratio to it meaningless.
-        let throughput: f64 = v.iter().zip(i).skip(1).map(|(v, i)| (v * i).abs() * dt).sum();
+        let throughput: f64 = v
+            .iter()
+            .zip(i)
+            .skip(1)
+            .map(|(v, i)| (v * i).abs() * dt)
+            .sum();
         let balance_err = (e_stored + e_loss - accepted) / throughput.max(1.0);
         let min_soc = soc.iter().cloned().fold(f64::INFINITY, f64::min);
         // The hard BMS cut-off at SOC = 1 is reached by the integrator with a

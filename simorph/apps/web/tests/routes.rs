@@ -379,12 +379,30 @@ async fn natural_language_statement_is_understood_solved_and_replayed() {
     assert_eq!(j["status"], "done", "{j}");
     assert_eq!(j["result"]["validated"], true, "{j}");
     let trace = std::path::PathBuf::from(j["result"]["trace_path"].as_str().unwrap());
-    let session = trace.parent().unwrap().file_name().unwrap().to_str().unwrap();
-    let (s, v) = call(&app, "POST", "/api/agents/replay", Some(json!({"session": session}))).await;
+    let session = trace
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/agents/replay",
+        Some(json!({"session": session})),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["identical"], true, "{v}");
     // only session ids are accepted, never paths
-    let (s, _) = call(&app, "POST", "/api/agents/replay", Some(json!({"session": "../../etc"}))).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/agents/replay",
+        Some(json!({"session": "../../etc"})),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -393,14 +411,32 @@ async fn natural_language_statement_is_understood_solved_and_replayed() {
 async fn uploaded_data_is_inspected_and_names_never_become_paths() {
     let (app, dir) = app();
     let csv = "diameter [mm],pressure_drop [bar]\n200,1.5\n300,0.21\n";
-    let (s, v) = call(&app, "POST", "/api/data/inspect", Some(json!({"filename": "../../obs.csv", "content": csv}))).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/data/inspect",
+        Some(json!({"filename": "../../obs.csv", "content": csv})),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["schema"]["columns"][1]["unit"], "bar");
     assert!(v["provenance"]["uri"].as_str().unwrap().contains("uploads"));
     assert!(!dir.parent().unwrap().join("obs.csv").exists());
-    let (s, _) = call(&app, "POST", "/api/data/inspect", Some(json!({"filename": "x.exe", "content": "1"}))).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/data/inspect",
+        Some(json!({"filename": "x.exe", "content": "1"})),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
-    let (s, _) = call(&app, "POST", "/api/fmu/inspect", Some(json!({"filename": "m.fmu", "content_base64": "bm90IGEgemlw"}))).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/fmu/inspect",
+        Some(json!({"filename": "m.fmu", "content_base64": "bm90IGEgemlw"})),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     let _ = std::fs::remove_dir_all(dir);
 }

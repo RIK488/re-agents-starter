@@ -101,7 +101,14 @@ pub fn python_module_available(module: &str) -> std::result::Result<String, Stri
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
-        Err(format!("{module} unavailable: {}", String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap_or("")))
+        Err(format!(
+            "{module} unavailable: {}",
+            String::from_utf8_lossy(&out.stderr)
+                .trim()
+                .lines()
+                .last()
+                .unwrap_or("")
+        ))
     }
 }
 

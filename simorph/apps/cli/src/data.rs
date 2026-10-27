@@ -73,10 +73,8 @@ pub struct FmuInspection {
 
 /// Read an FMU's `modelDescription.xml` and derive its component manifest.
 pub fn inspect_fmu(path: &Path) -> Result<FmuInspection> {
-    let fmu = simorph_adapter_fmi::FmuComponent::open(
-        path,
-        simorph_security::SandboxPolicy::strict(),
-    )?;
+    let fmu =
+        simorph_adapter_fmi::FmuComponent::open(path, simorph_security::SandboxPolicy::strict())?;
     let d = fmu.description();
     let (executable, execution_note) =
         match simorph_adapter_python_bridge::python_module_available("fmpy") {
@@ -109,7 +107,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("simorph-data-{}", RunId::new()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("obs.csv");
-        std::fs::write(&p, "diameter [mm],pressure_drop [bar],pressure_drop_std\n200,1.5,0.05\n300,0.21,0.01\n").unwrap();
+        std::fs::write(
+            &p,
+            "diameter [mm],pressure_drop [bar],pressure_drop_std\n200,1.5,0.05\n300,0.21,0.01\n",
+        )
+        .unwrap();
         let ws = Workspace::open(dir.join("ws")).unwrap();
         let r = inspect_data(Some(&ws), &p, 1).unwrap();
         assert_eq!(r.schema.columns.len(), 3);
