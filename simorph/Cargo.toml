@@ -20,6 +20,7 @@ members = [
     "crates/simorph-telemetry",
     "crates/simorph-knowledge",
     "services/scientific-director",
+    "services/campaign-runtime",
     "services/ai-laboratory",
     "services/model-factory",
     "services/simulator-factory",

@@ -1169,6 +1169,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "simorph-svc-campaign-runtime"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "simorph-core",
+ "simorph-experiment",
+ "simorph-optimization",
+ "simorph-plugin-engineering",
+ "simorph-plugin-sdk",
+ "simorph-provenance",
+ "simorph-svc-scientific-director",
+ "simorph-uncertainty",
+ "simorph-units",
+ "simorph-validation",
+ "tracing",
+]
+
+[[package]]
 name = "simorph-svc-evaluation-service"
 version = "0.1.0"
 dependencies = [
