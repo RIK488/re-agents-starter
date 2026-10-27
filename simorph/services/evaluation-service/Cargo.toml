@@ -3,6 +3,22 @@ name = "simorph-svc-evaluation-service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "SIMORPH evaluation service: protected registry of sealed evaluation suites, score cards separating quality from speed/cost, standard suites and external harness launchers."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-security = { path = "../../crates/simorph-security" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+simorph-execution = { path = "../../crates/simorph-execution" }
+simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+simorph-svc-ai-laboratory = { path = "../ai-laboratory" }
+simorph-plugin-ai = { path = "../../plugins/ai" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

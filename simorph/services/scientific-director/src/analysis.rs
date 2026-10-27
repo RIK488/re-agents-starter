@@ -63,6 +63,10 @@ pub struct SolutionCandidate {
     pub name: String,
     pub component: ComponentId,
     pub produces: Vec<String>,
+    /// Inputs the component needs (port names).
+    pub requires: Vec<String>,
+    /// Required inputs that are neither known nor design variables.
+    pub missing_inputs: Vec<String>,
     pub compute_kind: String,
     pub expected_evidence: EvidenceLevel,
     pub resource_requirements: ResourceRequirements,
@@ -300,6 +304,8 @@ pub fn analyse(problem: &ProblemSpec, catalog: &dyn ComponentCatalog) -> Result<
                     name: m.name.clone(),
                     component: m.id,
                     produces: m.output_schema.iter().map(|p| p.name.clone()).collect(),
+                    requires: m.input_schema.iter().map(|p| p.name.clone()).collect(),
+                    missing_inputs: missing.clone(),
                     compute_kind: format!("{kind:?}"),
                     expected_evidence: expected,
                     resource_requirements: m.resource_requirements.clone(),

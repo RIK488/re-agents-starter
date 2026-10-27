@@ -59,6 +59,8 @@ pub struct CampaignRuntime {
     pub ledger: Ledger,
     pub observations: Vec<Observation>,
     pub seed: u64,
+    /// Optional archive of experiment records (enables reproduction by id).
+    pub archive: Option<simorph_experiment::ExperimentArchive>,
     /// Best scalarised objective seen during screening (per component).
     best_screening: IndexMap<ComponentId, (f64, IndexMap<String, f64>)>,
     /// Best design point of the optimisation (per component).
@@ -75,6 +77,7 @@ impl CampaignRuntime {
             ledger,
             observations: vec![],
             seed: 42,
+            archive: None,
             best_screening: IndexMap::new(),
             best_optimised: IndexMap::new(),
             chosen_methods: IndexMap::new(),
@@ -328,6 +331,9 @@ impl CampaignRuntime {
         }
         let record = run_experiment(&plan, comp.as_ref(), ctl)?;
         let _ = self.ledger.record_experiment(&record, &[]);
+        if let Some(a) = &self.archive {
+            a.store(&record)?;
+        }
         let mut runs = vec![];
         let mut best: Option<(f64, IndexMap<String, f64>)> = None;
         let mut objectives = vec![];

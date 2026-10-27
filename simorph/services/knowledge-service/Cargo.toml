@@ -3,6 +3,19 @@ name = "simorph-svc-knowledge-service"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "SIMORPH knowledge service: scientific memory fed by campaigns and the AI laboratory, provenance-backed explanations, interdisciplinary transfer hypotheses, persistent store."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-knowledge = { path = "../../crates/simorph-knowledge" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+simorph-svc-scientific-director = { path = "../scientific-director" }
+simorph-svc-ai-laboratory = { path = "../ai-laboratory" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

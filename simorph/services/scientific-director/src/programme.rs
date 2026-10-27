@@ -151,7 +151,9 @@ pub fn plan(
         let produces_target = analysis.assessments.iter().any(|a| {
             cand.produces.contains(&a.name) && !a.categories.contains(&QuantityCategory::Known)
         });
-        if !produces_target {
+        if !produces_target || !cand.missing_inputs.is_empty() {
+            // A component whose inputs are not all available cannot be run
+            // directly; it is reached through model chaining (ARC-03).
             continue;
         }
 

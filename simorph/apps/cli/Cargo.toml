@@ -3,6 +3,39 @@ name = "simorph-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "SIMORPH command-line interface and shared action library (every action here is real, tested, and reused by the web API)."
+
+[lib]
+name = "simorph_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "simorph"
+path = "src/main.rs"
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-units = { path = "../../crates/simorph-units" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+simorph-model-registry = { path = "../../crates/simorph-model-registry" }
+simorph-experiment = { path = "../../crates/simorph-experiment" }
+simorph-validation = { path = "../../crates/simorph-validation" }
+simorph-uncertainty = { path = "../../crates/simorph-uncertainty" }
+simorph-optimization = { path = "../../crates/simorph-optimization" }
+simorph-simulation = { path = "../../crates/simorph-simulation" }
+simorph-plugin-sdk = { path = "../../crates/simorph-plugin-sdk" }
+simorph-telemetry = { path = "../../crates/simorph-telemetry" }
+simorph-svc-scientific-director = { path = "../../services/scientific-director" }
+simorph-svc-campaign-runtime = { path = "../../services/campaign-runtime" }
+simorph-svc-ai-laboratory = { path = "../../services/ai-laboratory" }
+simorph-plugin-physics = { path = "../../plugins/physics" }
+simorph-plugin-engineering = { path = "../../plugins/engineering" }
+simorph-plugin-ai = { path = "../../plugins/ai" }
+simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+indexmap.workspace = true
+clap.workspace = true
+chrono.workspace = true
+anyhow.workspace = true

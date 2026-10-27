@@ -291,31 +291,63 @@ impl Campaign {
         self.cost_used += outcome.cost;
         self.time_used_s += outcome.wall_time_s;
         let succeeded = outcome.succeeded();
-        // hypothesis revision from validated runs only
+        // Hypothesis revision from validated runs only: a component hypothesis
+        // is contradicted by runs that fail validation; a constraint
+        // hypothesis is supported when at least one validated run satisfies it.
         let valid = outcome
             .runs
             .iter()
             .filter(|r| r.valid && r.validation.is_some())
             .count() as u32;
         let invalid = outcome.runs.iter().filter(|r| !r.valid).count() as u32;
+        let constraints = self.problem.constraints.clone();
+        let problem_id = self.problem.id;
         for hid in &planned.hypotheses {
             let hid = *hid;
             if let Some(h) = self.hypotheses.iter_mut().find(|h| h.id == hid) {
                 let ev = HypothesisEvidence {
                     hypothesis: hid,
                     consistent: valid,
-                    contradicting: invalid + if succeeded { 0 } else { 1 },
+                    contradicting: invalid,
                     notes: vec![format!(
-                        "expérience {} : {}",
-                        planned.name,
-                        if succeeded {
-                            "critères satisfaits"
-                        } else {
-                            "critères non satisfaits"
-                        }
+                        "expérience {} : {} runs validés, {} invalides",
+                        planned.name, valid, invalid
                     )],
                 };
                 revise(h, &ev);
+            }
+        }
+        for c in &constraints {
+            let cid = HypothesisId::deterministic(&format!("{problem_id}:constraint:{}", c.name));
+            let satisfied = outcome
+                .runs
+                .iter()
+                .filter(|r| r.valid)
+                .filter_map(|r| r.outputs.get(&c.variable))
+                .filter(|v| match c.kind {
+                    ConstraintKind::UpperBound => **v <= c.bound + c.tolerance,
+                    ConstraintKind::LowerBound => **v >= c.bound - c.tolerance,
+                    ConstraintKind::Equality => (**v - c.bound).abs() <= c.tolerance.max(1e-12),
+                })
+                .count() as u32;
+            let checked = outcome
+                .runs
+                .iter()
+                .filter(|r| r.valid && r.outputs.contains_key(&c.variable))
+                .count() as u32;
+            if checked > 0 {
+                if let Some(h) = self.hypotheses.iter_mut().find(|h| h.id == cid) {
+                    let ev = HypothesisEvidence {
+                        hypothesis: cid,
+                        consistent: satisfied,
+                        contradicting: if satisfied == 0 { checked } else { 0 },
+                        notes: vec![format!(
+                            "expérience {} : {}/{} runs satisfont la contrainte",
+                            planned.name, satisfied, checked
+                        )],
+                    };
+                    revise(h, &ev);
+                }
             }
         }
         // contradiction detection across validated runs with identical inputs
