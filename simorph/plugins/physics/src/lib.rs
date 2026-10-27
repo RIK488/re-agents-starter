@@ -13,6 +13,7 @@
 //! | [`battery`]  | equivalent-circuit battery (SOC, OCV, R) | ODE       |
 //! | [`solar`]    | solar array power (cosine law, thermal derating) | algebraic |
 //! | [`attitude`] | rigid-body attitude (Euler + quaternion, PD control) | ODE |
+//! | [`nanosat`]  | whole-platform co-simulation (orbit, solar, battery, thermal, attitude) as one component | cosim |
 //!
 //! Discovery: [`manifests`], [`build`], [`slave`].
 
@@ -21,6 +22,7 @@
 pub mod attitude;
 pub mod battery;
 pub mod demo;
+pub mod nanosat;
 pub mod orbit;
 pub mod solar;
 pub mod thermal;
@@ -53,6 +55,7 @@ pub fn components() -> Vec<Box<dyn Component>> {
         battery::component(),
         solar::component(),
         attitude::component(),
+        Box::new(nanosat::NanosatCosim::new()),
     ]
 }
 
