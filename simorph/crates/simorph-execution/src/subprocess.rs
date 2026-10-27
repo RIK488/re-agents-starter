@@ -181,11 +181,19 @@ impl SubprocessComponent {
         let child = self.ensure_child(&mut guard)?;
         let line = serde_json::to_string(req)?;
         if let Err(e) = writeln!(child.stdin, "{line}").and_then(|_| child.stdin.flush()) {
+            // A broken pipe means the child is gone: report its exit status
+            // rather than the symptom (same wording as the read path).
+            let status = child.child.try_wait().ok().flatten();
             child.kill();
             *guard = None;
             return Err(SimorphError::Component {
                 component: self.manifest.name.clone(),
-                message: format!("write failed: {e}"),
+                message: match status {
+                    Some(st) => {
+                        format!("subprocess exited before accepting the request (status {st:?})")
+                    }
+                    None => format!("write failed: {e}"),
+                },
             });
         }
         let start = Instant::now();

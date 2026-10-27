@@ -59,7 +59,15 @@ impl Executor {
         match timeout {
             Some(t) => match tokio::time::timeout(t, handle).await {
                 Ok(joined) => {
-                    joined.map_err(|e| SimorphError::Other(format!("task panicked: {e}")))?
+                    let r =
+                        joined.map_err(|e| SimorphError::Other(format!("task panicked: {e}")))?;
+                    // The component may observe its own deadline before the
+                    // outer timer fires; a timed-out task is cancelled either way.
+                    if let Err(SimorphError::Timeout(_)) = &r {
+                        cancel.cancel();
+                        return Err(SimorphError::Timeout(t.as_millis() as u64));
+                    }
+                    r
                 }
                 Err(_) => {
                     cancel.cancel();
@@ -109,7 +117,7 @@ mod tests {
         let r = ex
             .run(c, req, Some(Duration::from_millis(100)), cancel.clone())
             .await;
-        assert!(matches!(r, Err(SimorphError::Timeout(_))));
+        assert!(matches!(r, Err(SimorphError::Timeout(_))), "{r:?}");
         assert!(cancel.is_cancelled());
     }
 
