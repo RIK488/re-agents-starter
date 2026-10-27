@@ -182,7 +182,9 @@ impl ModelDescriptor {
             units.insert(p.name.clone(), p.unit.clone());
         }
         for q in &self.parameters {
-            units.entry(q.name.clone()).or_insert_with(|| q.unit.clone());
+            units
+                .entry(q.name.clone())
+                .or_insert_with(|| q.unit.clone());
         }
         units.entry("t".into()).or_insert_with(|| "s".into());
         self.equations

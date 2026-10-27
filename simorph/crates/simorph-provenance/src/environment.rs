@@ -59,7 +59,8 @@ impl EnvironmentCapture {
             extra_versions: vec![],
             build_rustc_version: Some(env!("SIMORPH_BUILD_RUSTC").to_string())
                 .filter(|s| !s.is_empty()),
-            build_profile: Some(env!("SIMORPH_BUILD_PROFILE").to_string()).filter(|s| !s.is_empty()),
+            build_profile: Some(env!("SIMORPH_BUILD_PROFILE").to_string())
+                .filter(|s| !s.is_empty()),
             caller: None,
         }
     }

@@ -46,18 +46,19 @@ fn audit_nan_runs_are_failures_and_criteria_fail() {
     let c = NanAbove::new();
     let design =
         Design::full_factorial(vec![Factor::new("a", "1", 0.0, 1.0).with_levels(11)]).unwrap();
-    let plan = ExperimentPlan::new("nan", c.m.id, design, 1).with_criterion(SuccessCriterion {
-        output: "y".into(),
-        statistic: "max".into(),
-        comparator: "<".into(),
-        threshold: 0.6,
-    })
-    .with_criterion(SuccessCriterion {
-        output: "y".into(),
-        statistic: "fraction_ok".into(),
-        comparator: ">=".into(),
-        threshold: 1.0,
-    });
+    let plan = ExperimentPlan::new("nan", c.m.id, design, 1)
+        .with_criterion(SuccessCriterion {
+            output: "y".into(),
+            statistic: "max".into(),
+            comparator: "<".into(),
+            threshold: 0.6,
+        })
+        .with_criterion(SuccessCriterion {
+            output: "y".into(),
+            statistic: "fraction_ok".into(),
+            comparator: ">=".into(),
+            threshold: 1.0,
+        });
     let r = run_experiment(&plan, &c, &ExecutionControl::default()).unwrap();
     assert_eq!(r.n_failed(), 5);
     assert_eq!(r.summaries["y"].count, 6);

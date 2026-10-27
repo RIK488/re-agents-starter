@@ -76,7 +76,9 @@ where
 {
     let d = inputs.len();
     if d == 0 {
-        return Err(SimorphError::InvalidInput("Sobol analysis needs at least one input".into()));
+        return Err(SimorphError::InvalidInput(
+            "Sobol analysis needs at least one input".into(),
+        ));
     }
     // audit: tiny N gave meaningless indices without any warning
     if n < sobol_min_base_samples(d) {
@@ -270,7 +272,9 @@ where
                 out[base + step].get(output_index),
                 out[base + step + 1].get(output_index),
             ) else {
-                return Err(SimorphError::InvalidInput("output index out of range".into()));
+                return Err(SimorphError::InvalidInput(
+                    "output index out of range".into(),
+                ));
             };
             effects[j].push((y1 - y0) / (signs[t][j] * delta));
         }

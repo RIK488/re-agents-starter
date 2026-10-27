@@ -63,7 +63,9 @@ pub fn differential_evolution(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::DifferentialEvolution, |g| differential_evolution_impl(g, opts, budget, ctl))
+    crate::problem::guarded(p, budget, Method::DifferentialEvolution, |g| {
+        differential_evolution_impl(g, opts, budget, ctl)
+    })
 }
 
 fn differential_evolution_impl(
@@ -244,7 +246,9 @@ pub fn cma_es(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::CmaEs, |g| cma_es_impl(g, x0, opts, budget, ctl))
+    crate::problem::guarded(p, budget, Method::CmaEs, |g| {
+        cma_es_impl(g, x0, opts, budget, ctl)
+    })
 }
 
 fn cma_es_impl(

@@ -14,6 +14,6 @@ pub mod descriptor;
 pub mod registry;
 pub mod schemas;
 
-pub use descriptor::{Equation, Formalism, ModelDescriptor, VerificationCriterion};
+pub use descriptor::{Equation, EquationCheck, Formalism, ModelDescriptor, VerificationCriterion};
 pub use registry::{ChainPlan, ChainStep, Registry};
 pub use schemas::export_schemas;

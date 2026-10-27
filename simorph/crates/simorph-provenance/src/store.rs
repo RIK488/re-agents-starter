@@ -81,7 +81,8 @@ impl HeadAnchor {
         format!("{}:{}", self.count, self.last_hash.as_deref().unwrap_or(""))
     }
     fn sign(mut self, key: Option<&[u8]>) -> Self {
-        self.mac = key.map(|k| simorph_core::hashing::hmac_sha256_hex(k, self.message().as_bytes()));
+        self.mac =
+            key.map(|k| simorph_core::hashing::hmac_sha256_hex(k, self.message().as_bytes()));
         self
     }
     fn verify(&self, key: Option<&[u8]>) -> bool {
@@ -220,7 +221,11 @@ impl JsonlStore {
                     head.count
                 )));
             }
-            let at = if head.count == 0 { None } else { hashes.get(head.count as usize - 1).cloned() };
+            let at = if head.count == 0 {
+                None
+            } else {
+                hashes.get(head.count as usize - 1).cloned()
+            };
             if at != head.last_hash {
                 return Err(SimorphError::Validation(
                     "ledger rewritten: the record at the anchored position does not match the head anchor"
@@ -310,7 +315,12 @@ impl ProvenanceStore for JsonlStore {
             )));
         }
         if self.file.is_none() {
-            self.file = Some(OpenOptions::new().create(true).append(true).open(&self.path)?);
+            self.file = Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&self.path)?,
+            );
         }
         let mut line = serde_json::to_vec(&record)?;
         line.push(b'\n');

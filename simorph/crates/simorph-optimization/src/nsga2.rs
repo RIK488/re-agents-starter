@@ -108,8 +108,7 @@ pub fn crowding_distance(evals: &[Evaluation], front: &[usize]) -> Vec<f64> {
     for obj in 0..k {
         let mut order: Vec<usize> = (0..m).collect();
         order.sort_by(|&a, &b| {
-            evals[front[a]].objectives[obj]
-                .total_cmp(&evals[front[b]].objectives[obj])
+            evals[front[a]].objectives[obj].total_cmp(&evals[front[b]].objectives[obj])
         });
         dist[order[0]] = f64::INFINITY;
         dist[order[m - 1]] = f64::INFINITY;
@@ -326,7 +325,9 @@ pub fn hypervolume(points: &[Vec<f64>], reference: &[f64], mc_samples: usize, se
         .iter()
         .filter(|p| {
             p.len() >= reference.len()
-                && p.iter().zip(reference).all(|(a, r)| a.is_finite() && a <= r)
+                && p.iter()
+                    .zip(reference)
+                    .all(|(a, r)| a.is_finite() && a <= r)
         })
         .collect();
     if pts.is_empty() || reference.is_empty() {

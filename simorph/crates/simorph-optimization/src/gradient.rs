@@ -24,7 +24,10 @@ fn grad(
     let mut f0: Option<f64> = None;
     for i in 0..x.len() {
         let step = h * x[i].abs().max(1.0);
-        let (lo, hi) = bounds.get(i).copied().unwrap_or((f64::NEG_INFINITY, f64::INFINITY));
+        let (lo, hi) = bounds
+            .get(i)
+            .copied()
+            .unwrap_or((f64::NEG_INFINITY, f64::INFINITY));
         let up = x[i] + step <= hi;
         let down = x[i] - step >= lo;
         let mut xp = x.to_vec();
@@ -221,7 +224,9 @@ pub fn gradient_descent(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::GradientDescent, |g| run(g, x0, budget, ctl, 0))
+    crate::problem::guarded(p, budget, Method::GradientDescent, |g| {
+        run(g, x0, budget, ctl, 0)
+    })
 }
 
 /// Limited-memory BFGS (two-loop recursion, memory `m`).
@@ -232,7 +237,9 @@ pub fn lbfgs(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::Lbfgs, |g| run(g, x0, budget, ctl, m.max(1)))
+    crate::problem::guarded(p, budget, Method::Lbfgs, |g| {
+        run(g, x0, budget, ctl, m.max(1))
+    })
 }
 
 #[cfg(test)]

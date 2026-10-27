@@ -1724,6 +1724,7 @@ dependencies = [
  "simorph-svc-agents",
  "simorph-svc-ai-laboratory",
  "simorph-svc-campaign-runtime",
+ "simorph-svc-evaluation-service",
  "simorph-svc-improvement-loop",
  "simorph-svc-knowledge-service",
  "simorph-svc-model-factory",

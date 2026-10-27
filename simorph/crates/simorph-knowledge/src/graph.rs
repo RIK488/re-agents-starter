@@ -59,6 +59,28 @@ pub struct Node {
     pub provenance: Option<RecordId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Identifier of the validation record (e.g. a
+    /// `simorph_validation::ValidationRecord` id) that justifies an
+    /// `Established` hypothesis or a `MathematicallyProven` evidence level.
+    #[serde(default)]
+    pub validation: Option<String>,
+}
+
+/// Why a node's claimed status/evidence is not acceptable, if it is not.
+fn claim_problem(
+    kind: NodeKind,
+    evidence: EvidenceLevel,
+    status: KnowledgeStatus,
+    validation: Option<&str>,
+) -> Option<String> {
+    let _ = kind;
+    if status == KnowledgeStatus::Established && evidence == EvidenceLevel::UnverifiedHypothesis {
+        return Some("cannot be established: evidence level is unverified hypothesis".into());
+    }
+    if evidence == EvidenceLevel::MathematicallyProven && validation.is_none() {
+        return Some("claims a mathematical proof without a validation id".into());
+    }
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -91,6 +113,40 @@ pub struct Edge {
     pub note: String,
 }
 
+fn check_weight(e: &Edge) -> Result<()> {
+    if !(0.0..=1.0).contains(&e.weight) {
+        return Err(SimorphError::InvalidInput(format!(
+            "edge weight {} outside [0, 1]",
+            e.weight
+        )));
+    }
+    Ok(())
+}
+
+fn demote_if_unjustified(node: &mut Node) {
+    if let Some(why) = claim_problem(
+        node.kind,
+        node.evidence,
+        node.status,
+        node.validation.as_deref(),
+    ) {
+        let claimed = serde_json::json!({
+            "status": node.status, "evidence": node.evidence, "reason": why
+        });
+        match &mut node.data {
+            serde_json::Value::Object(m) => {
+                m.insert("refused_claim".into(), claimed);
+            }
+            serde_json::Value::Null => node.data = serde_json::json!({ "refused_claim": claimed }),
+            other => {
+                *other = serde_json::json!({ "value": other.clone(), "refused_claim": claimed })
+            }
+        }
+        node.status = KnowledgeStatus::Hypothesis;
+        node.evidence = EvidenceLevel::UnverifiedHypothesis;
+    }
+}
+
 /// The graph.  Nodes and edges are only ever added or re-labelled; nothing
 /// is deleted (deprecation is a status).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -104,6 +160,12 @@ impl KnowledgeGraph {
         Self::default()
     }
 
+    /// Add a node.  An unacceptable claim (see [`Self::try_add_node`]) is
+    /// **not** stored as claimed (audit: anything could be added as
+    /// established or proven): the node is stored as an open
+    /// `Hypothesis` with `UnverifiedHypothesis` evidence and the refused
+    /// claim is recorded in `data.refused_claim`.  Use `try_add_node` to get
+    /// an error instead.
     pub fn add_node(
         &mut self,
         kind: NodeKind,
@@ -112,28 +174,86 @@ impl KnowledgeGraph {
         evidence: EvidenceLevel,
         status: KnowledgeStatus,
     ) -> NodeId {
+        self.insert_node(kind, name, domains, evidence, status, None)
+    }
+
+    /// Add a node, refusing `Established` with unverified evidence and
+    /// `MathematicallyProven` evidence without a validation id.
+    pub fn try_add_node(
+        &mut self,
+        kind: NodeKind,
+        name: &str,
+        domains: &[&str],
+        evidence: EvidenceLevel,
+        status: KnowledgeStatus,
+    ) -> Result<NodeId> {
+        if let Some(why) = claim_problem(kind, evidence, status, None) {
+            return Err(SimorphError::Validation(format!("node `{name}` {why}")));
+        }
+        Ok(self.insert_node(kind, name, domains, evidence, status, None))
+    }
+
+    /// Add a node backed by a validation record (required for
+    /// `MathematicallyProven`).
+    pub fn add_validated_node(
+        &mut self,
+        kind: NodeKind,
+        name: &str,
+        domains: &[&str],
+        evidence: EvidenceLevel,
+        status: KnowledgeStatus,
+        validation_id: &str,
+    ) -> Result<NodeId> {
+        if validation_id.trim().is_empty() {
+            return Err(SimorphError::Validation("empty validation id".into()));
+        }
+        if let Some(why) = claim_problem(kind, evidence, status, Some(validation_id)) {
+            return Err(SimorphError::Validation(format!("node `{name}` {why}")));
+        }
+        Ok(self.insert_node(
+            kind,
+            name,
+            domains,
+            evidence,
+            status,
+            Some(validation_id.to_string()),
+        ))
+    }
+
+    fn insert_node(
+        &mut self,
+        kind: NodeKind,
+        name: &str,
+        domains: &[&str],
+        evidence: EvidenceLevel,
+        status: KnowledgeStatus,
+        validation: Option<String>,
+    ) -> NodeId {
         let now = Utc::now();
         let id = NodeId::new();
-        self.nodes.insert(
+        let mut node = Node {
             id,
-            Node {
-                id,
-                kind,
-                name: name.into(),
-                description: String::new(),
-                domains: domains.iter().map(|s| s.to_string()).collect(),
-                evidence,
-                status,
-                data: serde_json::Value::Null,
-                provenance: None,
-                created_at: now,
-                updated_at: now,
-            },
-        );
+            kind,
+            name: name.into(),
+            description: String::new(),
+            domains: domains.iter().map(|s| s.to_string()).collect(),
+            evidence,
+            status,
+            data: serde_json::Value::Null,
+            provenance: None,
+            created_at: now,
+            updated_at: now,
+            validation,
+        };
+        demote_if_unjustified(&mut node);
+        self.nodes.insert(id, node);
         id
     }
 
-    pub fn add_node_full(&mut self, node: Node) -> NodeId {
+    /// Insert or replace a complete node.  The same rules as
+    /// [`Self::add_node`] apply: an unjustified claim is demoted.
+    pub fn add_node_full(&mut self, mut node: Node) -> NodeId {
+        demote_if_unjustified(&mut node);
         let id = node.id;
         self.nodes.insert(id, node);
         id
@@ -144,7 +264,18 @@ impl KnowledgeGraph {
             .nodes
             .get_mut(&id)
             .ok_or_else(|| SimorphError::NotFound(format!("node {id}")))?;
+        // keep the record of a refused claim
+        let refused = n.data.get("refused_claim").cloned();
         n.data = data;
+        if let Some(r) = refused {
+            match &mut n.data {
+                serde_json::Value::Object(m) => {
+                    m.entry("refused_claim").or_insert(r);
+                }
+                serde_json::Value::Null => n.data = serde_json::json!({ "refused_claim": r }),
+                other => *other = serde_json::json!({ "value": other.clone(), "refused_claim": r }),
+            }
+        }
         n.updated_at = Utc::now();
         Ok(())
     }
@@ -158,22 +289,55 @@ impl KnowledgeGraph {
         Ok(())
     }
 
-    /// Change the status of a node.  `Established` requires an evidence level
-    /// of at least `Simulated` (verified), and nothing can be established
-    /// from an `UnverifiedHypothesis`.
+    /// Change the status of a node.  Nothing can be established from an
+    /// `UnverifiedHypothesis`, and a `Hypothesis` node (including recorded
+    /// transfer hypotheses) can only become `Established` through
+    /// [`Self::set_status_with_validation`] (audit: raising its evidence
+    /// level was enough to establish it without any validation).
     pub fn set_status(&mut self, id: NodeId, status: KnowledgeStatus) -> Result<()> {
+        self.set_status_inner(id, status, None)
+    }
+
+    /// Change the status of a node, attaching the id of the validation record
+    /// that justifies it.
+    pub fn set_status_with_validation(
+        &mut self,
+        id: NodeId,
+        status: KnowledgeStatus,
+        validation_id: &str,
+    ) -> Result<()> {
+        if validation_id.trim().is_empty() {
+            return Err(SimorphError::Validation("empty validation id".into()));
+        }
+        self.set_status_inner(id, status, Some(validation_id))
+    }
+
+    fn set_status_inner(
+        &mut self,
+        id: NodeId,
+        status: KnowledgeStatus,
+        validation: Option<&str>,
+    ) -> Result<()> {
         let n = self
             .nodes
             .get_mut(&id)
             .ok_or_else(|| SimorphError::NotFound(format!("node {id}")))?;
-        if status == KnowledgeStatus::Established
-            && n.evidence == EvidenceLevel::UnverifiedHypothesis
-        {
-            return Err(SimorphError::Validation(format!(
-                "node `{}` cannot be established: evidence level is unverified hypothesis",
-                n.name
-            )));
+        let validation = validation
+            .map(str::to_string)
+            .or_else(|| n.validation.clone());
+        if status == KnowledgeStatus::Established {
+            if let Some(why) = claim_problem(n.kind, n.evidence, status, validation.as_deref()) {
+                return Err(SimorphError::Validation(format!("node `{}` {why}", n.name)));
+            }
+            if n.kind == NodeKind::Hypothesis && validation.is_none() {
+                return Err(SimorphError::Validation(format!(
+                    "hypothesis `{}` cannot be established without a validation id \
+                     (use set_status_with_validation)",
+                    n.name
+                )));
+            }
         }
+        n.validation = validation;
         n.status = status;
         n.updated_at = Utc::now();
         Ok(())
@@ -206,6 +370,9 @@ impl KnowledgeGraph {
         if !self.nodes.contains_key(&from) || !self.nodes.contains_key(&to) {
             return Err(SimorphError::NotFound("edge endpoint".into()));
         }
+        if weight.is_nan() {
+            return Err(SimorphError::InvalidInput("edge weight is NaN".into()));
+        }
         self.edges.push(Edge {
             from,
             to,
@@ -221,6 +388,7 @@ impl KnowledgeGraph {
         if !self.nodes.contains_key(&edge.from) || !self.nodes.contains_key(&edge.to) {
             return Err(SimorphError::NotFound("edge endpoint".into()));
         }
+        check_weight(&edge)?;
         self.edges.push(edge);
         Ok(())
     }
@@ -349,8 +517,28 @@ impl KnowledgeGraph {
         Ok(())
     }
 
+    /// Load a graph, refusing edges whose endpoints do not exist and weights
+    /// outside [0, 1] (audit: a hand-edited file was accepted as is).
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        Ok(serde_json::from_str(&std::fs::read_to_string(path)?)?)
+        let g: Self = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+        for (i, e) in g.edges.iter().enumerate() {
+            if !g.nodes.contains_key(&e.from) || !g.nodes.contains_key(&e.to) {
+                return Err(SimorphError::Validation(format!(
+                    "knowledge graph edge #{i} ({:?}) references a missing node",
+                    e.kind
+                )));
+            }
+            check_weight(e).map_err(|err| SimorphError::Validation(format!("edge #{i}: {err}")))?;
+        }
+        for (k, n) in &g.nodes {
+            if *k != n.id {
+                return Err(SimorphError::Validation(format!(
+                    "knowledge graph node `{}` stored under a different id",
+                    n.name
+                )));
+            }
+        }
+        Ok(g)
     }
 
     /// Markdown summary of the scientific memory, separating the §11
@@ -510,7 +698,10 @@ mod tests {
             .set_evidence(h, EvidenceLevel::EmpiricallyValidated)
             .is_err());
         g.set_evidence(h, EvidenceLevel::Simulated).unwrap();
-        g.set_status(h, KnowledgeStatus::Established).unwrap();
+        // audit: a hypothesis needs a validation record to be established
+        assert!(g.set_status(h, KnowledgeStatus::Established).is_err());
+        g.set_status_with_validation(h, KnowledgeStatus::Established, "validation:test")
+            .unwrap();
         assert!(g.add_edge(h, NodeId::new(), EdgeKind::UsedIn, 1.0).is_err());
     }
 

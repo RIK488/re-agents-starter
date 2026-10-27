@@ -1044,6 +1044,14 @@ fn store_upload(ws: &Workspace, r: &UploadReq, allowed: &[&str]) -> Result<std::
     Ok(p)
 }
 
+async fn evaluation_status_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+) -> ApiResult<EvaluationStatus> {
+    check_key(&s, &headers)?;
+    Ok(Json(blocking(evaluation_status).await?))
+}
+
 async fn data_inspect_route(
     State(s): State<Shared>,
     headers: HeaderMap,
@@ -1087,6 +1095,7 @@ pub fn build_app(state: Shared) -> Router {
         .route("/api/formal/check", post(formal_route))
         .route("/api/understand", post(understand_route))
         .route("/api/data/inspect", post(data_inspect_route))
+        .route("/api/evaluation/status", get(evaluation_status_route))
         .route("/api/fmu/inspect", post(fmu_inspect_route))
         .route("/api/agents/run", post(agents_run_route))
         .route("/api/agents/replay", post(agents_replay_route))

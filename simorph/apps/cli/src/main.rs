@@ -149,6 +149,11 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Evaluation subsystem status (harnesses, sealed suites).
+    Evaluation {
+        #[command(subcommand)]
+        cmd: EvaluationCmd,
+    },
     /// Data sources (CSV, TSV, JSON-lines).
     Data {
         #[command(subcommand)]
@@ -226,6 +231,10 @@ enum ImproveCmd {
         #[arg(long)]
         recommended: bool,
     },
+}
+#[derive(Subcommand)]
+enum EvaluationCmd {
+    Status,
 }
 #[derive(Subcommand)]
 enum DataCmd {
@@ -760,6 +769,9 @@ fn real_main() -> Result<()> {
                 println!("{}", r.to_markdown())
             }
         }
+        Cmd::Evaluation {
+            cmd: EvaluationCmd::Status,
+        } => println!("{}", serde_json::to_string_pretty(&evaluation_status()?)?),
         Cmd::Data {
             cmd: DataCmd::Inspect { file, rows },
         } => {

@@ -35,11 +35,8 @@ pub fn deb_compare(a: &Evaluation, b: &Evaluation) -> Ordering {
     match (fa, fb) {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
-        (true, true) => a.objectives[0]
-            .total_cmp(&b.objectives[0]),
-        (false, false) => a
-            .violation()
-            .total_cmp(&b.violation()),
+        (true, true) => a.objectives[0].total_cmp(&b.objectives[0]),
+        (false, false) => a.violation().total_cmp(&b.violation()),
     }
 }
 

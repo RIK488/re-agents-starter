@@ -165,7 +165,12 @@ pub struct BudgetGuard<'a> {
 
 impl<'a> BudgetGuard<'a> {
     pub fn new(inner: &'a dyn ObjectiveFunction, max_evaluations: usize) -> Self {
-        Self { inner, max: max_evaluations, count: AtomicUsize::new(0), best: std::sync::Mutex::new(None) }
+        Self {
+            inner,
+            max: max_evaluations,
+            count: AtomicUsize::new(0),
+            best: std::sync::Mutex::new(None),
+        }
     }
     /// Calls that reached the inner problem.
     pub fn count(&self) -> usize {
@@ -248,7 +253,11 @@ pub(crate) fn guarded(
         Ok(mut r) => {
             r.evaluations = g.count();
             if let Some((x, e, k)) = best {
-                let rk = if r.best_x.is_empty() { f64::INFINITY } else { guard_key(&r.best_eval) };
+                let rk = if r.best_x.is_empty() {
+                    f64::INFINITY
+                } else {
+                    guard_key(&r.best_eval)
+                };
                 if k < rk || !r.best_f.is_finite() {
                     r.best_f = scalarize(&e, 1e6);
                     r.best_x = x;
@@ -421,7 +430,9 @@ pub fn random_search(
     budget: &Budget,
     ctl: &simorph_core::ExecutionControl,
 ) -> Result<OptimizationResult> {
-    guarded(p, budget, Method::RandomSearch, |g| random_search_impl(g, budget, ctl))
+    guarded(p, budget, Method::RandomSearch, |g| {
+        random_search_impl(g, budget, ctl)
+    })
 }
 
 fn random_search_impl(

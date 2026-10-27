@@ -31,7 +31,7 @@ que l'adaptateur et la décision existent, pas l'exécution.
 | Project Chrono | BSD-3-Clause | 10.0.0 | 8 : multicorps, éléments finis, véhicules | adapter | Prévu ; distribution conda uniquement (conda absent) | — |
 | NVIDIA Warp | Apache-2.0 (≥ 1.6) | 1.18.0 | 8 : noyaux GPU différentiables | intégrer | Prévu ; utile seulement avec GPU | — |
 | Lean 4 | Apache-2.0 | 4.35.0 | 13 : preuves interactives | intégrer | **Détecté absent** ; back-end prêt, renvoie `NotImplemented` avec la cause | `simorph-formal::lean` |
-| Inspect AI | MIT | 0.3.285 | 14 : évaluation de modèles et d'agents | intégrer | Lanceur et analyseur testés sur un harnais factice ; bibliothèque non installée | `evaluation-service::harness` |
+| Inspect AI | MIT | 0.3.285 | 14 : évaluation de modèles et d'agents | intégrer | Lanceur et analyseur testés sur un harnais factice. Essai réel : la version 0.3.285 s'installe, mais même avec `mockllm/model` elle télécharge un encodage `tiktoken` depuis `openaipublic.blob.core.windows.net`, refusé par le proxy ; aucune évaluation exécutée ici. Détection exposée par `simorph evaluation status` | `evaluation-service::harness` |
 | lm-evaluation-harness | MIT | 0.4.13 | 14 : bancs LLM | intégrer | Idem | idem |
 | MLflow | Apache-2.0 | 3.17.2 | 15 : suivi d'expériences, registre de modèles | intégrer | Prévu ; la provenance native couvre le suivi local | — |
 | DVC | Apache-2.0 | 3.67.1 | 15 : versionnement de données | intégrer | Prévu ; jeux de données hachés nativement | — |

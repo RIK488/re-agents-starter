@@ -12,7 +12,9 @@ pub fn nelder_mead(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::NelderMead, |g| nelder_mead_impl(g, x0, budget, ctl))
+    crate::problem::guarded(p, budget, Method::NelderMead, |g| {
+        nelder_mead_impl(g, x0, budget, ctl)
+    })
 }
 
 fn nelder_mead_impl(
@@ -53,10 +55,7 @@ fn nelder_mead_impl(
         iter += 1;
         // sort
         let mut idx: Vec<usize> = (0..=d).collect();
-        idx.sort_by(|&a, &b| {
-            fs[a]
-                .total_cmp(&fs[b])
-        });
+        idx.sort_by(|&a, &b| fs[a].total_cmp(&fs[b]));
         simplex = idx.iter().map(|&i| simplex[i].clone()).collect();
         fs = idx.iter().map(|&i| fs[i]).collect();
         history.push(HistoryPoint {
@@ -124,9 +123,7 @@ fn nelder_mead_impl(
             }
         }
     }
-    let bi = (0..=d)
-        .min_by(|&a, &b| fs[a].total_cmp(&fs[b]))
-        .unwrap();
+    let bi = (0..=d).min_by(|&a, &b| fs[a].total_cmp(&fs[b])).unwrap();
     let best_eval = p.evaluate(&simplex[bi])?;
     Ok(OptimizationResult {
         method: Method::NelderMead,

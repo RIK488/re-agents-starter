@@ -32,7 +32,9 @@ pub fn simulated_annealing(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::SimulatedAnnealing, |g| simulated_annealing_impl(g, x0, opts, budget, ctl))
+    crate::problem::guarded(p, budget, Method::SimulatedAnnealing, |g| {
+        simulated_annealing_impl(g, x0, opts, budget, ctl)
+    })
 }
 
 fn simulated_annealing_impl(

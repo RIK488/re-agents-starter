@@ -149,9 +149,17 @@ fn surrogate_targets(ys: &[f64]) -> Vec<f64> {
     }
     let (lo, hi) = fin
         .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| (a.min(v), b.max(v)));
-    let worst = if fin.is_empty() { 1.0 } else { hi + (hi - lo).max(1.0) };
-    ys.iter().map(|&v| if v.is_finite() { v } else { worst }).collect()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+            (a.min(v), b.max(v))
+        });
+    let worst = if fin.is_empty() {
+        1.0
+    } else {
+        hi + (hi - lo).max(1.0)
+    };
+    ys.iter()
+        .map(|&v| if v.is_finite() { v } else { worst })
+        .collect()
 }
 
 pub fn expected_improvement(mean: f64, var: f64, best: f64, xi: f64) -> f64 {
@@ -192,7 +200,9 @@ pub fn bayesian_optimization(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    crate::problem::guarded(p, budget, Method::BayesianOptimization, |g| bayesian_optimization_impl(g, opts, budget, ctl))
+    crate::problem::guarded(p, budget, Method::BayesianOptimization, |g| {
+        bayesian_optimization_impl(g, opts, budget, ctl)
+    })
 }
 
 fn bayesian_optimization_impl(

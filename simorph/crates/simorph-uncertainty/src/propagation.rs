@@ -129,7 +129,10 @@ where
         .map(|s| match &s.uncertainty {
             Uncertainty::Interval { low, high } | Uncertainty::Uniform { low, high } => {
                 if high < low {
-                    Err(SimorphError::InvalidInput(format!("{}: interval high < low", s.name)))
+                    Err(SimorphError::InvalidInput(format!(
+                        "{}: interval high < low",
+                        s.name
+                    )))
                 } else {
                     Ok((*low, *high))
                 }
@@ -137,7 +140,9 @@ where
             _ => Ok((s.value, s.value)),
         })
         .collect::<Result<_>>()?;
-    let free: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].1 > boxes[i].0).collect();
+    let free: Vec<usize> = (0..boxes.len())
+        .filter(|&i| boxes[i].1 > boxes[i].0)
+        .collect();
     let mut pts: Vec<Vec<f64>> = vec![inputs.iter().map(|s| s.value).collect()];
     let corners = free.len() <= 12;
     if corners {
@@ -152,18 +157,26 @@ where
         }
     }
     for u in crate::sampling::latin_hypercube(n_interior, boxes.len(), seed) {
-        pts.push(u.iter().zip(&boxes).map(|(u, (lo, hi))| lo + u * (hi - lo)).collect());
+        pts.push(
+            u.iter()
+                .zip(&boxes)
+                .map(|(u, (lo, hi))| lo + u * (hi - lo))
+                .collect(),
+        );
     }
     let (_, outs, msgs) = evaluate_samples(&pts, f, ctl)?;
     if outs.is_empty() {
-        return Err(SimorphError::Numerical("all interval evaluations failed".into()));
+        return Err(SimorphError::Numerical(
+            "all interval evaluations failed".into(),
+        ));
     }
     let m = outs[0].len();
     let bounds = (0..m)
         .map(|k| {
-            outs.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), o| {
-                (a.min(o[k]), b.max(o[k]))
-            })
+            outs.iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), o| {
+                    (a.min(o[k]), b.max(o[k]))
+                })
         })
         .collect();
     Ok(IntervalPropagation {

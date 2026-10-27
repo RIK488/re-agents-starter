@@ -68,7 +68,10 @@ fn conversion(
     simorph_units::convert(1.0, from, to).map_err(|e| {
         SimorphError::InvalidInput(format!("{what}: cannot convert `{from}` to `{to}`: {e}"))
     })?;
-    Ok(Some((simorph_units::parse_unit(from)?, simorph_units::parse_unit(to)?)))
+    Ok(Some((
+        simorph_units::parse_unit(from)?,
+        simorph_units::parse_unit(to)?,
+    )))
 }
 
 fn apply(conv: &Option<(simorph_units::Unit, simorph_units::Unit)>, v: f64) -> f64 {
@@ -104,8 +107,18 @@ impl<'a> ComponentProblem<'a> {
             }
         }
         let m = component.manifest();
-        let in_unit = |n: &str| m.input_schema.iter().find(|p| p.name == n).map(|p| p.unit.as_str());
-        let out_unit = |n: &str| m.output_schema.iter().find(|p| p.name == n).map(|p| p.unit.as_str());
+        let in_unit = |n: &str| {
+            m.input_schema
+                .iter()
+                .find(|p| p.name == n)
+                .map(|p| p.unit.as_str())
+        };
+        let out_unit = |n: &str| {
+            m.output_schema
+                .iter()
+                .find(|p| p.name == n)
+                .map(|p| p.unit.as_str())
+        };
         let input_conv = spec
             .design_variables
             .iter()
@@ -141,7 +154,8 @@ impl<'a> ComponentProblem<'a> {
         for (i, (dv, &v)) in self.spec.design_variables.iter().zip(x).enumerate() {
             let v = if dv.integer { v.round() } else { v };
             let v = self.input_conv.get(i).map(|c| apply(c, v)).unwrap_or(v);
-            req.inputs.insert(dv.name.clone(), serde_json::Value::from(v));
+            req.inputs
+                .insert(dv.name.clone(), serde_json::Value::from(v));
         }
         req
     }

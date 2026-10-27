@@ -123,8 +123,10 @@ impl Registry {
             .filter(|o| o.id == d.id || (o.name == d.name && o.version == d.version))
             .map(|o| o.id)
             .collect();
-        let backup: Vec<(ModelId, ModelDescriptor)> =
-            stale.iter().map(|id| (*id, self.models[id].clone())).collect();
+        let backup: Vec<(ModelId, ModelDescriptor)> = stale
+            .iter()
+            .map(|id| (*id, self.models[id].clone()))
+            .collect();
         for id in &stale {
             self.models.shift_remove(id);
         }
@@ -269,33 +271,46 @@ impl Registry {
     /// Inputs given by name in `available_inputs` carry no unit and match by
     /// name; use [`Self::plan_chain_typed`] to declare their units.
     pub fn plan_chain(&self, required_outputs: &[&str], available_inputs: &[&str]) -> ChainPlan {
-        let typed: Vec<(&str, Option<&str>)> = available_inputs.iter().map(|n| (*n, None)).collect();
+        let typed: Vec<(&str, Option<&str>)> =
+            available_inputs.iter().map(|n| (*n, None)).collect();
         self.plan_chain_inner(required_outputs, &typed)
     }
 
     /// [`Self::plan_chain`] with units for the available inputs
     /// (`(name, unit)`), which are then also matched by dimension.
-    pub fn plan_chain_typed(&self, required_outputs: &[&str], available_inputs: &[(&str, &str)]) -> ChainPlan {
-        let typed: Vec<(&str, Option<&str>)> =
-            available_inputs.iter().map(|(n, u)| (*n, Some(*u))).collect();
+    pub fn plan_chain_typed(
+        &self,
+        required_outputs: &[&str],
+        available_inputs: &[(&str, &str)],
+    ) -> ChainPlan {
+        let typed: Vec<(&str, Option<&str>)> = available_inputs
+            .iter()
+            .map(|(n, u)| (*n, Some(*u)))
+            .collect();
         self.plan_chain_inner(required_outputs, &typed)
     }
 
-    fn plan_chain_inner(&self, required_outputs: &[&str], typed_inputs: &[(&str, Option<&str>)]) -> ChainPlan {
+    fn plan_chain_inner(
+        &self,
+        required_outputs: &[&str],
+        typed_inputs: &[(&str, Option<&str>)],
+    ) -> ChainPlan {
         let available_inputs: Vec<&str> = typed_inputs.iter().map(|(n, _)| *n).collect();
         let available_inputs = available_inputs.as_slice();
-        // name -> (unit, shape) of what provides it; None = untyped user input
-        let mut typed: HashMap<String, Option<(String, Vec<usize>)>> = typed_inputs
+        // name -> (unit, shape) of what provides it: `None` for an untyped
+        // user input (matches by name); user inputs have no declared shape.
+        type Provided = Option<(String, Option<Vec<usize>>)>;
+        let mut typed: HashMap<String, Provided> = typed_inputs
             .iter()
-            .map(|(n, u)| (n.to_string(), u.map(|u| (u.to_string(), vec![]))))
+            .map(|(n, u)| (n.to_string(), u.map(|u| (u.to_string(), None))))
             .collect();
-        let fits = |typed: &HashMap<String, Option<(String, Vec<usize>)>>, p: &simorph_core::Port| -> bool {
+        let fits = |typed: &HashMap<String, Provided>, p: &simorph_core::Port| -> bool {
             match typed.get(&p.name) {
                 None => false,
                 Some(None) => true,
                 Some(Some((unit, shape))) => {
                     simorph_units::check_same_dimension(unit, &p.unit).is_ok()
-                        && (shape == &p.shape || shape.is_empty() && typed_inputs.iter().any(|(n, _)| *n == p.name))
+                        && shape.as_ref().map(|s| s == &p.shape).unwrap_or(true)
                 }
             }
         };
@@ -320,7 +335,10 @@ impl Registry {
                     order.push(m.id);
                     for p in &m.output_schema {
                         if available.insert(p.name.clone()) {
-                            typed.insert(p.name.clone(), Some((p.unit.clone(), p.shape.clone())));
+                            typed.insert(
+                                p.name.clone(),
+                                Some((p.unit.clone(), Some(p.shape.clone()))),
+                            );
                         }
                     }
                     progressed = true;
@@ -375,7 +393,11 @@ impl Registry {
         // audit: a dependency listed twice counted twice in the in-degree but
         // was released once, so it was reported as a cycle
         let deps = |m: &ModelDescriptor| -> BTreeSet<ModelId> {
-            m.dependencies.iter().copied().filter(|d| self.models.contains_key(d)).collect()
+            m.dependencies
+                .iter()
+                .copied()
+                .filter(|d| self.models.contains_key(d))
+                .collect()
         };
         let mut indeg: HashMap<ModelId, usize> = self.models.keys().map(|k| (*k, 0)).collect();
         for m in self.models.values() {

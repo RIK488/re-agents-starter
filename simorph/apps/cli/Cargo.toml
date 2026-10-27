@@ -44,6 +44,7 @@ simorph-distributed = { path = "../../crates/simorph-distributed" }
 simorph-svc-problem-understanding = { path = "../../services/problem-understanding" }
 simorph-svc-agents = { path = "../../services/agents" }
 simorph-connectors = { path = "../../crates/simorph-connectors" }
+simorph-svc-evaluation-service = { path = "../../services/evaluation-service" }
 simorph-adapter-fmi = { path = "../../adapters/fmi" }
 simorph-security = { path = "../../crates/simorph-security" }
 serde.workspace = true
