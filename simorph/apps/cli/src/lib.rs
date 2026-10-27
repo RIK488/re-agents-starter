@@ -7,8 +7,10 @@
 //! implemented action").
 
 pub mod actions;
+pub mod agents;
 pub mod bench;
 pub mod cluster;
+pub mod data;
 pub mod discover;
 pub mod examples;
 pub mod factories;
@@ -19,6 +21,8 @@ pub mod registry;
 pub mod workspace;
 
 pub use actions::*;
+pub use agents::*;
+pub use data::*;
 pub use discover::*;
 pub use factories::*;
 pub use formal::*;
@@ -31,6 +35,11 @@ pub use workspace::*;
 pub fn implemented_action_ids() -> Vec<&'static str> {
     vec![
         "components.list",
+        "problem.understand",
+        "data.inspect",
+        "fmu.inspect",
+        "agents.run",
+        "agents.replay",
         "components.capabilities",
         "components.show",
         "units.convert",

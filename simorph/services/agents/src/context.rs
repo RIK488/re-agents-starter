@@ -87,6 +87,8 @@ pub enum Operation {
     Archive,
     WriteArtifact,
     RecordVerdict,
+    /// Independent re-execution of a component (Validator).
+    ReExecute,
     /// Change success criteria, sealed references or permissions.
     AlterProtected,
     /// Act on the outside world (deploy, actuate, purchase…).
@@ -102,6 +104,7 @@ impl Operation {
             Operation::GenerateSimulator => vec![ReadWorkspace, WriteWorkspace, SpawnProcess],
             Operation::Archive | Operation::WriteArtifact => vec![WriteWorkspace],
             Operation::RecordVerdict => vec![WriteWorkspace],
+            Operation::ReExecute => vec![ReadWorkspace, SpawnProcess],
             Operation::AlterProtected => vec![SelfModify],
             Operation::ExternalAction => vec![ExternalSideEffect],
         }
@@ -133,6 +136,7 @@ impl Operation {
                 Archivist,
             ],
             Operation::RecordVerdict => &[Validator],
+            Operation::ReExecute => &[Validator],
             Operation::AlterProtected | Operation::ExternalAction => &[],
         }
     }
@@ -277,6 +281,24 @@ impl AgentContext {
         }
         std::fs::write(&p, content)?;
         Ok(p)
+    }
+
+    /// Re-execute a component by name with complete inputs (Validator only).
+    pub fn reexecute(
+        &self,
+        role: AgentRole,
+        component: &str,
+        inputs: indexmap::IndexMap<String, serde_json::Value>,
+        ctl: &ExecutionControl,
+    ) -> Result<TaskResult> {
+        self.authorize(role, Operation::ReExecute)?;
+        let c = self
+            .components
+            .get(component)
+            .ok_or_else(|| SimorphError::NotFound(format!("component `{component}`")))?;
+        let mut req = TaskRequest::new(c.manifest().id);
+        req.inputs = inputs;
+        run_component(c.as_ref(), &req, ctl)
     }
 
     pub fn record_verdict(&mut self, role: AgentRole, v: VerdictRecord) -> Result<()> {

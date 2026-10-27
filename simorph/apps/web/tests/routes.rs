@@ -365,3 +365,42 @@ async fn viewer_keys_are_read_only_and_cors_is_closed_by_default() {
     assert!(resp.headers().get("access-control-allow-origin").is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn natural_language_statement_is_understood_solved_and_replayed() {
+    let (app, dir) = app();
+    let text = "Une conduite d'eau d'une mine mesure 2 km de long. La vitesse d'écoulement est de 2,5 m/s, la masse volumique de 1000 kg/m³, la viscosité dynamique de 1 mPa·s et la rugosité de 0,05 mm. Choisir le diamètre entre 100 et 600 mm pour minimiser la perte de charge, qui ne doit pas dépasser 5 bar. Budget : 500 simulations.";
+    let (s, v) = call(&app, "POST", "/api/understand", Some(json!({"text": text}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["spec"]["design_variables"][0]["unit"], "mm");
+    let (s, v) = call(&app, "POST", "/api/agents/run", Some(json!({"text": text}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let j = wait_job(&app, v["id"].as_str().unwrap()).await;
+    assert_eq!(j["status"], "done", "{j}");
+    assert_eq!(j["result"]["validated"], true, "{j}");
+    let trace = std::path::PathBuf::from(j["result"]["trace_path"].as_str().unwrap());
+    let session = trace.parent().unwrap().file_name().unwrap().to_str().unwrap();
+    let (s, v) = call(&app, "POST", "/api/agents/replay", Some(json!({"session": session}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["identical"], true, "{v}");
+    // only session ids are accepted, never paths
+    let (s, _) = call(&app, "POST", "/api/agents/replay", Some(json!({"session": "../../etc"}))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn uploaded_data_is_inspected_and_names_never_become_paths() {
+    let (app, dir) = app();
+    let csv = "diameter [mm],pressure_drop [bar]\n200,1.5\n300,0.21\n";
+    let (s, v) = call(&app, "POST", "/api/data/inspect", Some(json!({"filename": "../../obs.csv", "content": csv}))).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["schema"]["columns"][1]["unit"], "bar");
+    assert!(v["provenance"]["uri"].as_str().unwrap().contains("uploads"));
+    assert!(!dir.parent().unwrap().join("obs.csv").exists());
+    let (s, _) = call(&app, "POST", "/api/data/inspect", Some(json!({"filename": "x.exe", "content": "1"}))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = call(&app, "POST", "/api/fmu/inspect", Some(json!({"filename": "m.fmu", "content_base64": "bm90IGEgemlw"}))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let _ = std::fs::remove_dir_all(dir);
+}

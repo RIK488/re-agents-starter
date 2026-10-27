@@ -6,6 +6,9 @@ license.workspace = true
 description = "SIMORPH HTTP API and web interface. Every route maps to an action of the shared action library; the UI only renders implemented actions."
 
 [dependencies]
+base64 = "0.22"
+sha2.workspace = true
+hex.workspace = true
 simorph-core = { path = "../../crates/simorph-core" }
 simorph-units = { path = "../../crates/simorph-units" }
 simorph-telemetry = { path = "../../crates/simorph-telemetry" }

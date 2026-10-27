@@ -663,6 +663,15 @@ impl CampaignRuntime {
             );
             d.low = lo;
             d.high = hi;
+            if let Some(x0) = d.initial {
+                d.initial = Some(self.to_port_unit(&m, &d.name, x0)?);
+            }
+            // The adapter converts spec units to port units itself; the spec
+            // is now expressed in port units, so it must say so (otherwise
+            // the values would be converted twice).
+            if let Some(p) = m.input_schema.iter().find(|p| p.name == d.name) {
+                d.unit = p.unit.clone();
+            }
         }
         // Constraint bounds and objective targets are declared in problem
         // units; the optimiser compares them with raw port values, so they

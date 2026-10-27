@@ -232,7 +232,7 @@ pub fn sentences(text: &str) -> Vec<String> {
 pub fn tokenize(sentence: &str) -> Vec<Tok> {
     let mut raw_chunks: Vec<String> = vec![];
     for chunk in sentence.split_whitespace() {
-        raw_chunks.push(chunk.replace('\u{a0}', " ").replace('\u{202f}', " "));
+        raw_chunks.push(chunk.replace(['\u{a0}', '\u{202f}'], " "));
     }
     // re-split on narrow/non-breaking spaces converted above
     let chunks: Vec<String> = raw_chunks
@@ -258,8 +258,7 @@ pub fn tokenize(sentence: &str) -> Vec<Tok> {
             }
         }
         let mut trailing = vec![];
-        loop {
-            let Some(l) = c.chars().last() else { break };
+        while let Some(l) = c.chars().last() {
             let strip = match l {
                 ',' | ';' | ':' | '.' | '!' | '?' | '"' | '»' | '”' | ']' => true,
                 ')' => c.matches('(').count() < c.matches(')').count(),

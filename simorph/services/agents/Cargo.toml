@@ -23,6 +23,7 @@ simorph-svc-knowledge-service = { path = "../knowledge-service" }
 simorph-svc-problem-understanding = { path = "../problem-understanding" }
 serde.workspace = true
 serde_json.workspace = true
+indexmap.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 tracing.workspace = true

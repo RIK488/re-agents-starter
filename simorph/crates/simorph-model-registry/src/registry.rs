@@ -52,7 +52,40 @@ impl Registry {
 
     /// Register a manifest after structural validation and unit parsing of
     /// every port.
+    /// A manifest with the same id or the same `name@version` as a
+    /// registered one is refused (audit: it silently replaced it); use
+    /// [`Self::replace_manifest`] to replace on purpose.
     pub fn register_manifest(&mut self, m: ComponentManifest) -> Result<ComponentId> {
+        if let Some(old) = self
+            .manifests
+            .values()
+            .find(|o| o.id == m.id || (o.name == m.name && o.version == m.version))
+        {
+            return Err(SimorphError::InvalidInput(format!(
+                "component `{}@{}` is already registered (id {}); use replace_manifest",
+                old.name, old.version, old.id
+            )));
+        }
+        self.insert_manifest(m)
+    }
+
+    /// Register a manifest, replacing any registered manifest with the same
+    /// id or `name@version`.  Returns the id.
+    pub fn replace_manifest(&mut self, m: ComponentManifest) -> Result<ComponentId> {
+        m.validate_structure()?;
+        let stale: Vec<ComponentId> = self
+            .manifests
+            .values()
+            .filter(|o| o.id == m.id || (o.name == m.name && o.version == m.version))
+            .map(|o| o.id)
+            .collect();
+        for id in stale {
+            self.manifests.shift_remove(&id);
+        }
+        self.insert_manifest(m)
+    }
+
+    fn insert_manifest(&mut self, m: ComponentManifest) -> Result<ComponentId> {
         m.validate_structure()?;
         for p in m.input_schema.iter().chain(m.output_schema.iter()) {
             simorph_units::parse_unit(&p.unit).map_err(|e| {
@@ -64,8 +97,58 @@ impl Registry {
         Ok(id)
     }
 
+    /// Register a model descriptor.  Refused: duplicate id or
+    /// `name@version` (use [`Self::replace_model`]), missing dependencies,
+    /// dimensionally inconsistent equations (equations that cannot be
+    /// checked are accepted — see [`ModelDescriptor::equation_dimension_reports`]).
     pub fn register_model(&mut self, d: ModelDescriptor) -> Result<ModelId> {
+        if let Some(old) = self
+            .models
+            .values()
+            .find(|o| o.id == d.id || (o.name == d.name && o.version == d.version))
+        {
+            return Err(SimorphError::InvalidInput(format!(
+                "model `{}@{}` is already registered; use replace_model",
+                old.name, old.version
+            )));
+        }
+        self.insert_model(d)
+    }
+
+    /// Register a model, replacing one with the same id or `name@version`.
+    pub fn replace_model(&mut self, d: ModelDescriptor) -> Result<ModelId> {
+        let stale: Vec<ModelId> = self
+            .models
+            .values()
+            .filter(|o| o.id == d.id || (o.name == d.name && o.version == d.version))
+            .map(|o| o.id)
+            .collect();
+        let backup: Vec<(ModelId, ModelDescriptor)> =
+            stale.iter().map(|id| (*id, self.models[id].clone())).collect();
+        for id in &stale {
+            self.models.shift_remove(id);
+        }
+        match self.insert_model(d) {
+            Ok(id) => Ok(id),
+            Err(e) => {
+                for (id, m) in backup {
+                    self.models.insert(id, m);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    fn insert_model(&mut self, d: ModelDescriptor) -> Result<ModelId> {
         d.validate_structure()?;
+        for (name, check) in d.equation_dimension_reports() {
+            if let crate::descriptor::EquationCheck::Inconsistent(why) = check {
+                return Err(SimorphError::Unit(format!(
+                    "model `{}` equation `{name}` is dimensionally inconsistent: {why}",
+                    d.name
+                )));
+            }
+        }
         for dep in &d.dependencies {
             if !self.models.contains_key(dep) {
                 return Err(SimorphError::NotFound(format!(
@@ -179,7 +262,43 @@ impl Registry {
     /// are all available; stop when the requirements are met or nothing new
     /// can be produced.  Returns the minimal subset (components that do not
     /// contribute to a required output are pruned).
+    ///
+    /// A component input is satisfied by an earlier component output only if
+    /// the names match **and** the units have the same dimension and the
+    /// shapes agree (audit: a `T` in kelvin used to feed a `T` in metres).
+    /// Inputs given by name in `available_inputs` carry no unit and match by
+    /// name; use [`Self::plan_chain_typed`] to declare their units.
     pub fn plan_chain(&self, required_outputs: &[&str], available_inputs: &[&str]) -> ChainPlan {
+        let typed: Vec<(&str, Option<&str>)> = available_inputs.iter().map(|n| (*n, None)).collect();
+        self.plan_chain_inner(required_outputs, &typed)
+    }
+
+    /// [`Self::plan_chain`] with units for the available inputs
+    /// (`(name, unit)`), which are then also matched by dimension.
+    pub fn plan_chain_typed(&self, required_outputs: &[&str], available_inputs: &[(&str, &str)]) -> ChainPlan {
+        let typed: Vec<(&str, Option<&str>)> =
+            available_inputs.iter().map(|(n, u)| (*n, Some(*u))).collect();
+        self.plan_chain_inner(required_outputs, &typed)
+    }
+
+    fn plan_chain_inner(&self, required_outputs: &[&str], typed_inputs: &[(&str, Option<&str>)]) -> ChainPlan {
+        let available_inputs: Vec<&str> = typed_inputs.iter().map(|(n, _)| *n).collect();
+        let available_inputs = available_inputs.as_slice();
+        // name -> (unit, shape) of what provides it; None = untyped user input
+        let mut typed: HashMap<String, Option<(String, Vec<usize>)>> = typed_inputs
+            .iter()
+            .map(|(n, u)| (n.to_string(), u.map(|u| (u.to_string(), vec![]))))
+            .collect();
+        let fits = |typed: &HashMap<String, Option<(String, Vec<usize>)>>, p: &simorph_core::Port| -> bool {
+            match typed.get(&p.name) {
+                None => false,
+                Some(None) => true,
+                Some(Some((unit, shape))) => {
+                    simorph_units::check_same_dimension(unit, &p.unit).is_ok()
+                        && (shape == &p.shape || shape.is_empty() && typed_inputs.iter().any(|(n, _)| *n == p.name))
+                }
+            }
+        };
         let mut available: HashSet<String> =
             available_inputs.iter().map(|s| s.to_string()).collect();
         let required: BTreeSet<String> = required_outputs.iter().map(|s| s.to_string()).collect();
@@ -194,13 +313,15 @@ impl Registry {
                 if used.contains(&m.id) {
                     continue;
                 }
-                let inputs_ok = m.input_schema.iter().all(|p| available.contains(&p.name));
+                let inputs_ok = m.input_schema.iter().all(|p| fits(&typed, p));
                 let adds_new = m.output_schema.iter().any(|p| !available.contains(&p.name));
                 if inputs_ok && adds_new {
                     used.insert(m.id);
                     order.push(m.id);
                     for p in &m.output_schema {
-                        available.insert(p.name.clone());
+                        if available.insert(p.name.clone()) {
+                            typed.insert(p.name.clone(), Some((p.unit.clone(), p.shape.clone())));
+                        }
                     }
                     progressed = true;
                 }
@@ -251,13 +372,14 @@ impl Registry {
 
     /// Topological order of registered models by dependency.
     pub fn model_dependency_order(&self) -> Result<Vec<ModelId>> {
+        // audit: a dependency listed twice counted twice in the in-degree but
+        // was released once, so it was reported as a cycle
+        let deps = |m: &ModelDescriptor| -> BTreeSet<ModelId> {
+            m.dependencies.iter().copied().filter(|d| self.models.contains_key(d)).collect()
+        };
         let mut indeg: HashMap<ModelId, usize> = self.models.keys().map(|k| (*k, 0)).collect();
         for m in self.models.values() {
-            for d in &m.dependencies {
-                if self.models.contains_key(d) {
-                    *indeg.get_mut(&m.id).unwrap() += 1;
-                }
-            }
+            *indeg.get_mut(&m.id).unwrap() = deps(m).len();
         }
         let mut queue: VecDeque<ModelId> = self
             .models

@@ -52,14 +52,31 @@ impl Explanation {
 pub struct Ledger {
     inner: Arc<Mutex<Box<dyn ProvenanceStore>>>,
     environment_record: Arc<Mutex<Option<RecordId>>>,
+    key: Option<Arc<Vec<u8>>>,
 }
 
 impl Ledger {
+    /// Unkeyed ledger: the hash chain detects accidental corruption only —
+    /// anyone with write access can edit a record and re-hash the chain.
     pub fn new(store: Box<dyn ProvenanceStore>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(store)),
             environment_record: Arc::new(Mutex::new(None)),
+            key: None,
         }
+    }
+
+    /// Keyed ledger: every record carries an HMAC-SHA256 under `key`, and
+    /// [`Self::verify_chain`] requires it, so edit-and-rehash is detected by
+    /// whoever holds the key.  Keep the key outside the ledger's storage.
+    pub fn with_key(store: Box<dyn ProvenanceStore>, key: &[u8]) -> Self {
+        let mut l = Self::new(store);
+        l.key = Some(Arc::new(key.to_vec()));
+        l
+    }
+
+    pub fn is_keyed(&self) -> bool {
+        self.key.is_some()
     }
 
     pub fn in_memory() -> Self {
@@ -69,11 +86,16 @@ impl Ledger {
     /// Record the execution environment once per session; subsequent calls
     /// return the same record id.
     pub fn capture_environment(&self) -> Result<RecordId> {
+        self.capture_environment_with(EnvironmentCapture::capture())
+    }
+
+    /// Same as [`Self::capture_environment`] with a caller-built capture
+    /// (e.g. [`EnvironmentCapture::capture_for`]).
+    pub fn capture_environment_with(&self, env: EnvironmentCapture) -> Result<RecordId> {
         let mut slot = self.environment_record.lock();
         if let Some(id) = *slot {
             return Ok(id);
         }
-        let env = EnvironmentCapture::capture();
         let id = self.append(
             ProvenanceKind::Environment,
             "execution environment",
@@ -109,8 +131,12 @@ impl Ledger {
             parents: parents.to_vec(),
             previous_hash: last.map(|r| r.content_hash),
             content_hash: String::new(),
+            mac: None,
         };
         rec.content_hash = rec.compute_hash();
+        if let Some(k) = &self.key {
+            rec.mac = Some(rec.compute_mac(k));
+        }
         store.append(&rec)?;
         Ok(rec.id)
     }
@@ -162,6 +188,14 @@ impl Ledger {
                     "chain broken at record {} (#{i})",
                     r.id
                 )));
+            }
+            if let Some(k) = &self.key {
+                if !r.is_authentic(k) {
+                    return Err(SimorphError::Validation(format!(
+                        "record {} (#{i}) has no valid MAC for the ledger key",
+                        r.id
+                    )));
+                }
             }
             if r.sequence != i as u64 {
                 return Err(SimorphError::Validation(format!(

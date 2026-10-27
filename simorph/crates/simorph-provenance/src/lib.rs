@@ -20,4 +20,4 @@ pub mod store;
 pub use environment::EnvironmentCapture;
 pub use ledger::{Explanation, ExplanationStep, Ledger};
 pub use record::{ProvenanceKind, ProvenanceRecord, RecordId};
-pub use store::{JsonlStore, MemoryStore, ProvenanceStore};
+pub use store::{HeadAnchor, JsonlStore, MemoryStore, ProvenanceStore};

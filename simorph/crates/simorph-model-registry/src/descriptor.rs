@@ -171,6 +171,49 @@ impl ModelDescriptor {
         self
     }
 
+    /// Dimensional analysis of every equation, using the declared units of
+    /// inputs, outputs, states and parameters, `t` in seconds and the
+    /// derivative notation `dX/dt` (unit of X per second).  An equation is
+    /// `"lhs = rhs"` in `expression`, or — as the model factory writes them —
+    /// `name` = lhs and `expression` = rhs.
+    pub fn equation_dimension_reports(&self) -> Vec<(String, EquationCheck)> {
+        let mut units: indexmap::IndexMap<String, String> = indexmap::IndexMap::new();
+        for p in self.inputs.iter().chain(&self.outputs).chain(&self.states) {
+            units.insert(p.name.clone(), p.unit.clone());
+        }
+        for q in &self.parameters {
+            units.entry(q.name.clone()).or_insert_with(|| q.unit.clone());
+        }
+        units.entry("t".into()).or_insert_with(|| "s".into());
+        self.equations
+            .iter()
+            .map(|e| {
+                let (lhs, rhs) = match e.expression.split_once('=') {
+                    Some((l, r)) if !r.starts_with('=') && !l.ends_with(['<', '>', '!']) => {
+                        (l.to_string(), r.to_string())
+                    }
+                    _ => (e.name.clone(), e.expression.clone()),
+                };
+                let (lhs, rhs) = (derivatives(&lhs, &mut units), derivatives(&rhs, &mut units));
+                let check = match (
+                    simorph_validation::dimension_of(&lhs, &units),
+                    simorph_validation::dimension_of(&rhs, &units),
+                ) {
+                    (Ok(a), Ok(b)) if a == b => EquationCheck::Consistent,
+                    (Ok(a), Ok(b)) => EquationCheck::Inconsistent(format!(
+                        "`{}`: left [{a}] ≠ right [{b}]",
+                        e.expression
+                    )),
+                    (Err(m), _) | (_, Err(m)) if is_dimension_error(&m) => {
+                        EquationCheck::Inconsistent(format!("`{}`: {m}", e.expression))
+                    }
+                    (Err(m), _) | (_, Err(m)) => EquationCheck::Unchecked(m),
+                };
+                (e.name.clone(), check)
+            })
+            .collect()
+    }
+
     /// Structural checks: every port must carry a parseable unit, names must
     /// be unique, parameters must carry parseable units.
     pub fn validate_structure(&self) -> simorph_core::Result<()> {
@@ -204,4 +247,57 @@ impl ModelDescriptor {
         }
         Ok(())
     }
+}
+
+/// Outcome of the dimensional check of one equation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EquationCheck {
+    Consistent,
+    /// Dimensionally inconsistent: registration is refused.
+    Inconsistent(String),
+    /// Could not be checked (unknown symbol, unsupported function or
+    /// notation); registration proceeds, the reason is reported.
+    Unchecked(String),
+}
+
+fn is_dimension_error(m: &str) -> bool {
+    m.starts_with("sum of [")
+        || m.starts_with("exponent has dimension")
+        || m.contains("of arguments with different dimensions")
+        || m.contains("of a dimensional argument")
+}
+
+/// Rewrite `dX/dt` into a symbol `__d_X_dt` whose unit is unit(X)/s.
+fn derivatives(expr: &str, units: &mut indexmap::IndexMap<String, String>) -> String {
+    let chars: Vec<char> = expr.chars().collect();
+    let ident = |c: char| c.is_alphanumeric() || c == '_' || c == '.';
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let boundary = i == 0 || !ident(chars[i - 1]);
+        if boundary && chars[i] == 'd' {
+            let mut j = i + 1;
+            while j < chars.len() && ident(chars[j]) {
+                j += 1;
+            }
+            let name: String = chars[i + 1..j].iter().collect();
+            let tail: String = chars[j..].iter().take(3).collect();
+            let after = chars.get(j + 3).copied();
+            if !name.is_empty()
+                && tail == "/dt"
+                && after.map(|c| !ident(c)).unwrap_or(true)
+                && units.contains_key(&name)
+            {
+                let sym = format!("__d_{name}_dt");
+                let u = format!("({})/s", units[&name]);
+                units.insert(sym.clone(), u);
+                out.push_str(&sym);
+                i = j + 3;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }

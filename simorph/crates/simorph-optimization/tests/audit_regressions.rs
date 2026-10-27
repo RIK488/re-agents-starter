@@ -3,6 +3,8 @@
 
 use simorph_core::*;
 use simorph_optimization::*;
+use simorph_optimization::Budget;
+use simorph_uncertainty::InputSpec;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
@@ -74,7 +76,9 @@ fn audit_nan_objectives_are_worst_not_panics() {
         let p = Probe::new(vec![(-3.0, 3.0); 2], |x| {
             if x[0] > 0.0 { f64::NAN } else { (x[0] + 1.0).powi(2) + x[1].powi(2) }
         });
-        let r = run(&p, &Budget::new(300).seed(5)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        // the GP fit of BO is O(n³) per iteration: keep its budget small
+        let max = if name == "bayesian" { 60 } else { 300 };
+        let r = run(&p, &Budget::new(max).seed(5)).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(r.best_f.is_finite(), "{name}: best_f {}", r.best_f);
         assert!(r.best_x[0] <= 0.0, "{name}: best point in the NaN region {:?}", r.best_x);
     }
@@ -176,7 +180,8 @@ fn audit_robust_worst_case_is_labelled_worst_case() {
     let unc = vec![InputSpec::new("t", 0.0, Uncertainty::Uniform { low: -0.1, high: 0.1 })];
     let p = RobustProblem::new(vec![(-1.0, 1.0)], &unc, 16, 1, RobustCriterion::WorstCase, |x, t| {
         Ok((x[0] + t[0]).powi(2))
-    });
+    })
+    .unwrap();
     let r = robust_optimize(&p, &Budget::new(300).seed(1), &ctl()).unwrap();
     assert_eq!(r.method, Method::RobustWorstCase);
 }

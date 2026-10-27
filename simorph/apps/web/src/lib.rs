@@ -931,6 +931,151 @@ async fn discovery_route(
     Ok(Json(serde_json::json!({"id": id, "status": "running"})))
 }
 
+#[derive(Deserialize)]
+struct TextReq {
+    text: String,
+}
+
+async fn understand_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<TextReq>,
+) -> ApiResult<serde_json::Value> {
+    check_key(&s, &headers)?;
+    let u = blocking(move || understand_text(&r.text)).await?;
+    Ok(Json(serde_json::json!({
+        "spec": u.spec,
+        "result": serde_json::to_value(&u).map_err(SimorphError::from)?,
+        "markdown": u.to_markdown(),
+    })))
+}
+
+async fn agents_run_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<TextReq>,
+) -> ApiResult<serde_json::Value> {
+    check_write(&s, &headers)?;
+    let id = start_job(&s, "agents", move |ws, _ctl| {
+        let out = run_agent_session(ws, &r.text)?;
+        let md = out.report_markdown.clone();
+        Ok((serde_json::to_value(&out)?, md))
+    });
+    Ok(Json(serde_json::json!({"id": id, "status": "running"})))
+}
+
+#[derive(Deserialize)]
+struct ReplayReq {
+    /// Session directory name under `<workspace>/agents/` (no paths accepted).
+    session: String,
+}
+
+async fn agents_replay_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<ReplayReq>,
+) -> ApiResult<serde_json::Value> {
+    check_write(&s, &headers)?;
+    if r.session.is_empty()
+        || !r
+            .session
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '-')
+    {
+        return Err(SimorphError::InvalidInput("session must be a session id".into()).into());
+    }
+    let st = s.clone();
+    let rep = blocking(move || {
+        let trace = st
+            .workspace
+            .root
+            .join("agents")
+            .join(&r.session)
+            .join("trace.jsonl");
+        replay_agent_session(&st.workspace, &trace)
+    })
+    .await?;
+    Ok(Json(serde_json::to_value(&rep).map_err(SimorphError::from)?))
+}
+
+/// Uploaded file (text content or base64 bytes), stored under
+/// `<workspace>/uploads/<sha256>.<ext>`; client file names never reach the
+/// file system beyond their extension.
+#[derive(Deserialize)]
+struct UploadReq {
+    filename: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    content_base64: Option<String>,
+    #[serde(default = "five")]
+    rows: usize,
+}
+fn five() -> usize {
+    5
+}
+
+fn store_upload(ws: &Workspace, r: &UploadReq, allowed: &[&str]) -> Result<std::path::PathBuf> {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+    let ext = std::path::Path::new(&r.filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| allowed.contains(&e.as_str()))
+        .ok_or_else(|| {
+            SimorphError::InvalidInput(format!("file extension must be one of {allowed:?}"))
+        })?;
+    let bytes = match (&r.content, &r.content_base64) {
+        (Some(t), None) => t.as_bytes().to_vec(),
+        (None, Some(b)) => base64::engine::general_purpose::STANDARD
+            .decode(b.trim())
+            .map_err(|e| SimorphError::InvalidInput(format!("invalid base64: {e}")))?,
+        _ => {
+            return Err(SimorphError::InvalidInput(
+                "give exactly one of content or content_base64".into(),
+            ))
+        }
+    };
+    let dir = ws.root.join("uploads");
+    std::fs::create_dir_all(&dir)?;
+    let p = dir.join(format!("{}.{ext}", hex::encode(Sha256::digest(&bytes))));
+    std::fs::write(&p, &bytes)?;
+    Ok(p)
+}
+
+async fn data_inspect_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<UploadReq>,
+) -> ApiResult<DataInspection> {
+    check_write(&s, &headers)?;
+    let st = s.clone();
+    Ok(Json(
+        blocking(move || {
+            let p = store_upload(&st.workspace, &r, &["csv", "tsv", "jsonl", "ndjson"])?;
+            inspect_data(Some(&st.workspace), &p, r.rows)
+        })
+        .await?,
+    ))
+}
+
+async fn fmu_inspect_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<UploadReq>,
+) -> ApiResult<FmuInspection> {
+    check_write(&s, &headers)?;
+    let st = s.clone();
+    Ok(Json(
+        blocking(move || {
+            let p = store_upload(&st.workspace, &r, &["fmu"])?;
+            inspect_fmu(&p)
+        })
+        .await?,
+    ))
+}
+
 pub fn build_app(state: Shared) -> Router {
     Router::new()
         .route("/", get(index))
@@ -940,6 +1085,11 @@ pub fn build_app(state: Shared) -> Router {
         .route("/api/components", get(components_list))
         .route("/api/capabilities", get(capabilities_route))
         .route("/api/formal/check", post(formal_route))
+        .route("/api/understand", post(understand_route))
+        .route("/api/data/inspect", post(data_inspect_route))
+        .route("/api/fmu/inspect", post(fmu_inspect_route))
+        .route("/api/agents/run", post(agents_run_route))
+        .route("/api/agents/replay", post(agents_replay_route))
         .route("/api/improvement/run", post(improvement_route))
         .route("/api/discovery", post(discovery_route))
         .route("/api/components/:name", get(component_show))

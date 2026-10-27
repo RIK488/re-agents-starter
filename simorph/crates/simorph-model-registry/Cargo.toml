@@ -8,6 +8,7 @@ description = "Model descriptors, component discovery, compatibility checks and 
 [dependencies]
 simorph-core = { path = "../simorph-core" }
 simorph-units = { path = "../simorph-units" }
+simorph-validation = { path = "../simorph-validation" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

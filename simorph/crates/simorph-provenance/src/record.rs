@@ -73,6 +73,11 @@ pub struct ProvenanceRecord {
     pub previous_hash: Option<String>,
     /// SHA-256 over (id, sequence, timestamp, kind, label, payload, parents, previous_hash).
     pub content_hash: String,
+    /// HMAC-SHA256 of `content_hash` under the ledger key (keyed ledgers
+    /// only).  Without the key nobody can re-hash an edited record into a
+    /// valid one; the plain hash chain only detects *accidental* edits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac: Option<String>,
 }
 
 impl ProvenanceRecord {
@@ -106,5 +111,20 @@ impl ProvenanceRecord {
     /// True if the stored hash matches the content.
     pub fn is_intact(&self) -> bool {
         self.content_hash == self.compute_hash()
+    }
+
+    /// MAC that a keyed ledger stores in [`Self::mac`].
+    pub fn compute_mac(&self, key: &[u8]) -> String {
+        simorph_core::hashing::hmac_sha256_hex(key, self.content_hash.as_bytes())
+    }
+
+    /// True if the record is intact and carries a valid MAC for `key`.
+    pub fn is_authentic(&self, key: &[u8]) -> bool {
+        self.is_intact()
+            && self
+                .mac
+                .as_deref()
+                .map(|m| simorph_core::hashing::ct_eq(m, &self.compute_mac(key)))
+                .unwrap_or(false)
     }
 }

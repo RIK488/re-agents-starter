@@ -423,7 +423,7 @@ fn agents_cannot_alter_protected_state_or_forge_verdicts() {
     let orch = Orchestrator::new(OrchestratorConfig::new(workdir("evil")))
         .unwrap()
         .with_agent(Box::new(EvilCritic));
-    let r = orch.run_blocking(text(BEAM_FR)).unwrap();
+    let r = orch.run_blocking(text(PIPE_FR)).unwrap();
     assert_eq!(r.end, SessionEnd::Completed, "{}", r.report_markdown);
     assert_eq!(r.verdicts.len(), 1);
     assert!(r.verdicts[0].passed, "the real validator's verdict stands");

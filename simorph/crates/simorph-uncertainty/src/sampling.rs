@@ -6,12 +6,22 @@ use rand::Rng as _;
 use rand_distr::{Distribution, LogNormal, Normal, Triangular};
 use simorph_core::{Result, SimorphError, Uncertainty};
 
+fn interval_error() -> SimorphError {
+    SimorphError::InvalidInput(
+        "an `Interval` uncertainty is a set, not a probability distribution: \
+         sampling it would invent a uniform law.  Use `InputSpec::interval_as_uniform()` \
+         to accept that assumption explicitly, or `propagate_interval` for bounds"
+            .into(),
+    )
+}
+
 /// Draw one sample of a quantity with nominal `value` and uncertainty `u`.
 ///
-/// For `Normal`, `Uniform`, `LogNormal`, `Triangular`, `Samples`, `Interval`
-/// the sample follows the declared distribution.  `Exact` returns the
-/// nominal value.  `Undeclared` is an **error**: SIMORPH never silently
-/// treats an undeclared uncertainty as zero.
+/// For `Normal`, `Uniform`, `LogNormal`, `Triangular`, `Samples` the sample
+/// follows the declared distribution.  `Exact` returns the nominal value.
+/// `Undeclared` is an **error**: SIMORPH never silently treats an undeclared
+/// uncertainty as zero.  `Interval` is also an **error** (audit: it was
+/// silently sampled as uniform); see [`InputSpec::interval_as_uniform`].
 pub fn sample_uncertainty(value: f64, u: &Uncertainty, rng: &mut Rng) -> Result<f64> {
     Ok(match u {
         Uncertainty::Undeclared => {
@@ -29,7 +39,8 @@ pub fn sample_uncertainty(value: f64, u: &Uncertainty, rng: &mut Rng) -> Result<
                     .sample(rng)
             }
         }
-        Uncertainty::Uniform { low, high } | Uncertainty::Interval { low, high } => {
+        Uncertainty::Interval { .. } => return Err(interval_error()),
+        Uncertainty::Uniform { low, high } => {
             if high < low {
                 return Err(SimorphError::InvalidInput("interval high < low".into()));
             }
@@ -66,7 +77,11 @@ pub fn inverse_cdf(value: f64, u: &Uncertainty, p: f64) -> Result<f64> {
         }
         Uncertainty::Exact => value,
         Uncertainty::Normal { std_dev } => value + std_dev * normal_quantile(p),
-        Uncertainty::Uniform { low, high } | Uncertainty::Interval { low, high } => {
+        Uncertainty::Interval { .. } => return Err(interval_error()),
+        Uncertainty::Uniform { low, high } => {
+            if high < low {
+                return Err(SimorphError::InvalidInput("interval high < low".into()));
+            }
             low + (high - low) * p
         }
         Uncertainty::LogNormal { mu, sigma } => (mu + sigma * normal_quantile(p)).exp(),
@@ -83,7 +98,10 @@ pub fn inverse_cdf(value: f64, u: &Uncertainty, p: f64) -> Result<f64> {
                 return Err(SimorphError::InvalidInput("empty sample set".into()));
             }
             let mut s = values.clone();
-            s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            if s.iter().any(|v| v.is_nan()) {
+                return Err(SimorphError::InvalidInput("sample set contains NaN".into()));
+            }
+            s.sort_by(|a, b| a.total_cmp(b));
             crate::stats::quantile(&s, p)
         }
     })
@@ -144,6 +162,9 @@ pub struct InputSpec {
     pub name: String,
     pub value: f64,
     pub uncertainty: Uncertainty,
+    /// Explicitly accept treating an `Interval` as a uniform distribution
+    /// when sampling (default `false`: sampling an interval is an error).
+    pub interval_as_uniform: bool,
 }
 
 impl InputSpec {
@@ -152,6 +173,23 @@ impl InputSpec {
             name: name.into(),
             value,
             uncertainty,
+            interval_as_uniform: false,
+        }
+    }
+    /// Accept the (non-conservative) assumption that an `Interval` input is
+    /// uniformly distributed.  Results then hold only under that assumption.
+    pub fn interval_as_uniform(mut self) -> Self {
+        self.interval_as_uniform = true;
+        self
+    }
+    /// Uncertainty actually used for sampling.
+    pub fn sampling_uncertainty(&self) -> Uncertainty {
+        match (&self.uncertainty, self.interval_as_uniform) {
+            (Uncertainty::Interval { low, high }, true) => Uncertainty::Uniform {
+                low: *low,
+                high: *high,
+            },
+            (u, _) => u.clone(),
         }
     }
     pub fn uniform(name: &str, low: f64, high: f64) -> Self {
@@ -169,11 +207,16 @@ pub enum Design {
     MonteCarlo,
     /// Latin hypercube with random permutation per dimension.
     LatinHypercube,
-    /// Sobol sequence (Joe–Kuo direction numbers, up to 16 dimensions; Halton
-    /// beyond that).
+    /// Sobol sequence (Joe–Kuo direction numbers, up to 16 dimensions;
+    /// Halton beyond that) randomised by a seeded digital shift (XOR), or a
+    /// seeded Cranley–Patterson rotation for the Halton fallback.  The seed
+    /// therefore matters (audit: it was ignored and every "replicate" was
+    /// identical) while the net structure is preserved.
     Sobol,
-    /// Halton sequence (prime bases).
+    /// Halton sequence (prime bases), deterministic, seed ignored.
     Halton,
+    /// Plain (unscrambled) Sobol sequence, seed ignored.
+    SobolUnscrambled,
 }
 
 /// Unit-hypercube points `[0,1)^d` for a design.
@@ -188,6 +231,18 @@ pub fn unit_design(design: Design, n: usize, d: usize, seed: u64) -> Vec<Vec<f64
         Design::LatinHypercube => latin_hypercube(n, d, seed),
         Design::Sobol => {
             if d <= SOBOL_MAX_DIM {
+                sobol_scrambled(n, d, true, seed)
+            } else {
+                let mut rng = seeded(seed);
+                let shift: Vec<f64> = (0..d).map(|_| rng.gen::<f64>()).collect();
+                halton(n, d, true)
+                    .into_iter()
+                    .map(|p| p.iter().zip(&shift).map(|(x, s)| (x + s).fract()).collect())
+                    .collect()
+            }
+        }
+        Design::SobolUnscrambled => {
+            if d <= SOBOL_MAX_DIM {
                 sobol(n, d, true)
             } else {
                 halton(n, d, true)
@@ -197,6 +252,25 @@ pub fn unit_design(design: Design, n: usize, d: usize, seed: u64) -> Vec<Vec<f64
     }
 }
 
+/// Sobol points randomised by a digital shift: every coordinate's 32-bit
+/// integer representation is XOR-ed with a seeded random word.  The shifted
+/// set keeps the (t, m, s)-net property of the original sequence; different
+/// seeds give independent randomisations (usable for error estimation).
+pub fn sobol_scrambled(n: usize, d: usize, skip_zero: bool, seed: u64) -> Vec<Vec<f64>> {
+    let mut rng = seeded(seed ^ 0x5DEE_CE66_D1CE_5EED);
+    let shift: Vec<u64> = (0..d).map(|_| rng.gen::<u32>() as u64).collect();
+    let two32 = (1u64 << 32) as f64;
+    sobol(n, d, skip_zero)
+        .into_iter()
+        .map(|p| {
+            p.iter()
+                .zip(&shift)
+                .map(|(&x, &s)| (((x * two32) as u64) ^ s) as f64 / two32)
+                .collect()
+        })
+        .collect()
+}
+
 /// Map unit-hypercube points to the input distributions via inverse CDFs.
 pub fn map_to_inputs(points: &[Vec<f64>], inputs: &[InputSpec]) -> Result<Vec<Vec<f64>>> {
     points
@@ -204,7 +278,7 @@ pub fn map_to_inputs(points: &[Vec<f64>], inputs: &[InputSpec]) -> Result<Vec<Ve
         .map(|p| {
             p.iter()
                 .zip(inputs)
-                .map(|(&u, spec)| inverse_cdf(spec.value, &spec.uncertainty, u))
+                .map(|(&u, spec)| inverse_cdf(spec.value, &spec.sampling_uncertainty(), u))
                 .collect()
         })
         .collect()
@@ -223,7 +297,7 @@ pub fn sample_inputs(
             .map(|_| {
                 inputs
                     .iter()
-                    .map(|s| sample_uncertainty(s.value, &s.uncertainty, &mut rng))
+                    .map(|s| sample_uncertainty(s.value, &s.sampling_uncertainty(), &mut rng))
                     .collect()
             })
             .collect();

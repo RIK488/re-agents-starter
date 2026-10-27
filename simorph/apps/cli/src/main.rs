@@ -137,6 +137,33 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ImproveCmd,
     },
+    /// Understand a natural-language problem statement (FR/EN).
+    Understand {
+        /// Statement text; use `--file` to read it from a file instead.
+        text: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Write the resulting problem specification to this JSON file.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Data sources (CSV, TSV, JSON-lines).
+    Data {
+        #[command(subcommand)]
+        cmd: DataCmd,
+    },
+    /// FMU inspection (FMI 2.0 / 3.0).
+    Fmu {
+        #[command(subcommand)]
+        cmd: FmuCmd,
+    },
+    /// Supervised multi-agent sessions.
+    Agents {
+        #[command(subcommand)]
+        cmd: AgentsCmd,
+    },
     /// Formal verification (Z3 certificates).
     Formal {
         #[command(subcommand)]
@@ -199,6 +226,42 @@ enum ImproveCmd {
         #[arg(long)]
         recommended: bool,
     },
+}
+#[derive(Subcommand)]
+enum DataCmd {
+    /// Schema with validated units, SHA-256, first rows; recorded in provenance.
+    Inspect {
+        file: PathBuf,
+        #[arg(long, default_value_t = 5)]
+        rows: usize,
+    },
+}
+#[derive(Subcommand)]
+enum FmuCmd {
+    /// Read modelDescription.xml and derive the component manifest.
+    Inspect { file: PathBuf },
+}
+#[derive(Subcommand)]
+enum AgentsCmd {
+    /// Solve a natural-language statement with the seven supervised agents.
+    Run {
+        text: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replay a recorded session trace and compare every message.
+    Replay { trace: PathBuf },
+}
+fn statement(text: Option<String>, file: Option<PathBuf>) -> Result<String> {
+    match (text, file) {
+        (Some(t), None) => Ok(t),
+        (None, Some(f)) => Ok(std::fs::read_to_string(f)?),
+        _ => Err(SimorphError::InvalidInput(
+            "give either a statement or --file".into(),
+        )),
+    }
 }
 #[derive(Subcommand)]
 enum FormalCmd {
@@ -678,6 +741,59 @@ fn real_main() -> Result<()> {
                 println!(
                     "{}",
                     run_improvement(&ws, &target, recommended, &ctl)?.to_markdown()
+                );
+            }
+        },
+        Cmd::Understand {
+            text,
+            file,
+            out,
+            json,
+        } => {
+            let r = understand_text(&statement(text, file)?)?;
+            if let Some(p) = out {
+                std::fs::write(&p, serde_json::to_string_pretty(&r.spec)?)?;
+            }
+            if json {
+                println!("{}", serde_json::to_string_pretty(&r)?)
+            } else {
+                println!("{}", r.to_markdown())
+            }
+        }
+        Cmd::Data {
+            cmd: DataCmd::Inspect { file, rows },
+        } => {
+            let ws = Workspace::open(cli.data)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&inspect_data(Some(&ws), &file, rows)?)?
+            );
+        }
+        Cmd::Fmu {
+            cmd: FmuCmd::Inspect { file },
+        } => println!("{}", serde_json::to_string_pretty(&inspect_fmu(&file)?)?),
+        Cmd::Agents { cmd } => match cmd {
+            AgentsCmd::Run { text, file, json } => {
+                let ws = Workspace::open(cli.data)?;
+                let s = run_agent_session(&ws, &statement(text, file)?)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&s)?)
+                } else {
+                    println!(
+                        "{}\n\nfin : {:?} · messages : {} · validé : {:?}\ntrace : {}",
+                        s.report_markdown,
+                        s.end,
+                        s.messages,
+                        s.validated,
+                        s.trace_path.display()
+                    );
+                }
+            }
+            AgentsCmd::Replay { trace } => {
+                let ws = Workspace::open(cli.data)?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&replay_agent_session(&ws, &trace)?)?
                 );
             }
         },

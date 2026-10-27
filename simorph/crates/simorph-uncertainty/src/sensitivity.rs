@@ -27,6 +27,18 @@ pub struct SobolResult {
     /// Number of base samples N; total evaluations = N (d + 2).
     pub n_base: usize,
     pub evaluations: usize,
+    /// Sampling design actually used ("sobol-scrambled" or the fallback).
+    #[serde(default)]
+    pub design: String,
+    /// Conditions that weaken the estimates (fallback design, N not a power
+    /// of two for Sobol, near-zero output variance …).
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// Smallest accepted base sample size for `d` inputs.
+pub fn sobol_min_base_samples(d: usize) -> usize {
+    4 * (d + 2)
 }
 
 fn sobol_estimators(fa: &[f64], fb: &[f64], fab: &[f64], idx: &[usize]) -> (f64, f64) {
@@ -63,10 +75,32 @@ where
     F: Fn(&[f64]) -> Result<Vec<f64>> + Sync,
 {
     let d = inputs.len();
+    if d == 0 {
+        return Err(SimorphError::InvalidInput("Sobol analysis needs at least one input".into()));
+    }
+    // audit: tiny N gave meaningless indices without any warning
+    if n < sobol_min_base_samples(d) {
+        return Err(SimorphError::InvalidInput(format!(
+            "Sobol analysis with {d} inputs needs N ≥ {} base samples (got {n})",
+            sobol_min_base_samples(d)
+        )));
+    }
+    let mut warnings = vec![];
     // A and B from one 2d-dimensional Sobol design (standard practice).
     let design = if 2 * d <= crate::sampling::SOBOL_MAX_DIM {
+        if !n.is_power_of_two() {
+            warnings.push(format!(
+                "N = {n} is not a power of two: the Sobol net's balance properties are lost"
+            ));
+        }
         Design::Sobol
     } else {
+        warnings.push(format!(
+            "2d = {} exceeds the {} Sobol dimensions available: fell back to Latin hypercube \
+             (slower convergence)",
+            2 * d,
+            crate::sampling::SOBOL_MAX_DIM
+        ));
         Design::LatinHypercube
     };
     let unit = unit_design(design, n, 2 * d, seed);
@@ -119,8 +153,8 @@ where
             b1.push(x);
             bt.push(t);
         }
-        b1.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        bt.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        b1.sort_by(|a, b| a.total_cmp(b));
+        bt.sort_by(|a, b| a.total_cmp(b));
         indices.push(SobolIndex {
             name: inputs[i].name.clone(),
             first_order: s1,
@@ -135,12 +169,21 @@ where
             ),
         });
     }
+    let output_variance = variance(&ab_all);
+    if !(output_variance > 1e-300) {
+        warnings.push("output variance is zero: indices are undefined and reported as 0".into());
+    }
     Ok(SobolResult {
         indices,
-        output_variance: variance(&ab_all),
+        output_variance,
         output_mean: mean(&ab_all),
         n_base: n,
         evaluations: all.len(),
+        design: match design {
+            Design::Sobol => "sobol-scrambled".into(),
+            _ => "latin-hypercube".into(),
+        },
+        warnings,
     })
 }
 
@@ -172,6 +215,12 @@ where
     F: Fn(&[f64]) -> Result<Vec<f64>> + Sync,
 {
     let d = inputs.len();
+    if r == 0 || d == 0 {
+        // audit: r = 0 returned NaN effects as if they were results
+        return Err(SimorphError::InvalidInput(format!(
+            "Morris screening needs r ≥ 1 trajectories and ≥ 1 input (r = {r}, d = {d})"
+        )));
+    }
     let p = levels.max(2);
     let delta = p as f64 / (2.0 * (p as f64 - 1.0));
     let mut rng = seeded(seed);
@@ -217,8 +266,12 @@ where
     for t in 0..r {
         let base = t * (d + 1);
         for (step, &j) in orders[t].iter().enumerate() {
-            let y0 = out[base + step][output_index];
-            let y1 = out[base + step + 1][output_index];
+            let (Some(&y0), Some(&y1)) = (
+                out[base + step].get(output_index),
+                out[base + step + 1].get(output_index),
+            ) else {
+                return Err(SimorphError::InvalidInput("output index out of range".into()));
+            };
             effects[j].push((y1 - y0) / (signs[t][j] * delta));
         }
     }

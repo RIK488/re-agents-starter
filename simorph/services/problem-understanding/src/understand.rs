@@ -602,7 +602,7 @@ fn resolve(mentions: &mut [Mention], catalog: &Catalog, lex: &Lexicon) {
         let mut cands: Vec<(usize, f64)> = vec![];
         let roles: Vec<bool> = match m.role {
             MentionRole::Constraint => vec![false, true],
-            r if matches!(r, MentionRole::Objective | MentionRole::Unknown) => vec![false],
+            MentionRole::Objective | MentionRole::Unknown => vec![false],
             _ => vec![true],
         };
         for (ri, input) in roles.iter().enumerate() {

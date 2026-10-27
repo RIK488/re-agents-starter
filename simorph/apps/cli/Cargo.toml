@@ -41,6 +41,11 @@ simorph-svc-improvement-loop = { path = "../../services/improvement-loop" }
 simorph-multimodal = { path = "../../crates/simorph-multimodal" }
 simorph-evolution = { path = "../../crates/simorph-evolution" }
 simorph-distributed = { path = "../../crates/simorph-distributed" }
+simorph-svc-problem-understanding = { path = "../../services/problem-understanding" }
+simorph-svc-agents = { path = "../../services/agents" }
+simorph-connectors = { path = "../../crates/simorph-connectors" }
+simorph-adapter-fmi = { path = "../../adapters/fmi" }
+simorph-security = { path = "../../crates/simorph-security" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
@@ -48,3 +53,7 @@ indexmap.workspace = true
 clap.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+hex.workspace = true

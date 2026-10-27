@@ -467,6 +467,119 @@ pub fn validate_campaign(c: &dir::Campaign, ledger: &simorph_provenance::Ledger)
     checks
 }
 
+/// Independent re-execution: for every conclusion, rebuild the complete
+/// request of its supporting run (problem knowns converted to port units +
+/// the run's recorded inputs), execute the component again at full fidelity
+/// and compare with the concluded value (relative tolerance 5 %, the
+/// fidelity-consistency tolerance of the programme).
+pub fn reexecute_conclusions(
+    c: &dir::Campaign,
+    ctx: &AgentContext,
+    role: AgentRole,
+    ctl: &ExecutionControl,
+) -> Vec<CheckView> {
+    let mut out = vec![];
+    let manifests = match ctx.manifests(role) {
+        Ok(m) => m,
+        Err(e) => {
+            return vec![CheckView {
+                name: "reexecution".into(),
+                passed: false,
+                details: e.to_string(),
+            }]
+        }
+    };
+    for k in c.conclusions.iter().filter(|k| k.value.is_finite()) {
+        let name = format!("reexecution:{}", k.variable);
+        let Some(rid) = k.supporting_runs.first() else {
+            continue;
+        };
+        let Some((outcome, run)) = c
+            .outcomes
+            .iter()
+            .find_map(|o| o.runs.iter().find(|r| &r.run_id == rid).map(|r| (o, r)))
+        else {
+            continue;
+        };
+        let Some(exp) = c
+            .programme
+            .experiments
+            .iter()
+            .find(|e| e.id == outcome.experiment)
+        else {
+            continue;
+        };
+        let Some(m) = manifests.iter().find(|m| m.name == exp.component_name) else {
+            out.push(CheckView {
+                name,
+                passed: false,
+                details: format!("composant {} introuvable", exp.component_name),
+            });
+            continue;
+        };
+        let mut inputs = indexmap::IndexMap::new();
+        let mut missing = vec![];
+        for p in &m.input_schema {
+            if let Some(v) = run.inputs.get(&p.name) {
+                inputs.insert(p.name.clone(), serde_json::json!(v));
+            } else if let Some(q) = c.problem.knowns.iter().find(|q| q.name == p.name) {
+                match simorph_units::convert(q.value, &q.unit, &p.unit) {
+                    Ok(v) => {
+                        inputs.insert(p.name.clone(), serde_json::json!(v));
+                    }
+                    Err(e) => missing.push(format!("{} ({e})", p.name)),
+                }
+            } else {
+                missing.push(p.name.clone());
+            }
+        }
+        if !missing.is_empty() {
+            out.push(CheckView {
+                name,
+                passed: false,
+                details: format!(
+                    "requête non reconstructible : entrées manquantes {}",
+                    missing.join(", ")
+                ),
+            });
+            continue;
+        }
+        let res = match ctx.reexecute(role, &m.name, inputs, ctl) {
+            Ok(r) => r,
+            Err(e) => {
+                out.push(CheckView {
+                    name,
+                    passed: false,
+                    details: format!("réexécution impossible : {e}"),
+                });
+                continue;
+            }
+        };
+        let port_unit = m
+            .output_schema
+            .iter()
+            .find(|p| p.name == k.variable)
+            .map(|p| p.unit.clone())
+            .unwrap_or_else(|| k.unit.clone());
+        let Ok(raw) = res.get_f64(&k.variable) else {
+            out.push(CheckView {
+                name,
+                passed: false,
+                details: "sortie absente à la réexécution".into(),
+            });
+            continue;
+        };
+        let v = simorph_units::convert(raw, &port_unit, &k.unit).unwrap_or(raw);
+        let rel = (v - k.value).abs() / v.abs().max(k.value.abs()).max(1e-300);
+        out.push(CheckView {
+            name,
+            passed: rel <= 0.05,
+            details: format!("réexécution indépendante : {v:.6e} [{}] contre {:.6e} conclu (écart relatif {:.2e})", k.unit, k.value, rel),
+        });
+    }
+    out
+}
+
 impl Agent for ValidatorAgent {
     fn role(&self) -> AgentRole {
         AgentRole::Validator
@@ -485,7 +598,8 @@ impl Agent for ValidatorAgent {
             .campaigns
             .get(*index)
             .ok_or_else(|| SimorphError::NotFound(format!("campaign {index}")))?;
-        let checks = validate_campaign(c, ctx.ledger());
+        let mut checks = validate_campaign(c, ctx.ledger());
+        checks.extend(reexecute_conclusions(c, ctx, self.role(), _ctl));
         // The verdict judges trustworthiness (integrity, traceability,
         // constraints).  Completeness of the programme is reported as a check
         // but does not by itself invalidate the results that were obtained.
