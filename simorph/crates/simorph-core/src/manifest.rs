@@ -112,19 +112,31 @@ pub enum ExecutionInterface {
     /// Native Rust implementation registered in-process.
     InProcess,
     /// Child process speaking the SIMORPH JSON-lines protocol over stdio.
-    Subprocess { command: String, #[serde(default)] args: Vec<String> },
+    Subprocess {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
     /// HTTP/JSON endpoint.
     Http { base_url: String },
     /// gRPC endpoint.
     Grpc { endpoint: String },
     /// Python module loaded through the python bridge.
-    Python { module: String, #[serde(default)] entrypoint: String },
+    Python {
+        module: String,
+        #[serde(default)]
+        entrypoint: String,
+    },
     /// FMI Functional Mock-up Unit.
     Fmu { path: String, fmi_version: String },
     /// WebAssembly component.
     Wasm { path: String },
     /// Containerised component.
-    Container { image: String, #[serde(default)] command: Vec<String> },
+    Container {
+        image: String,
+        #[serde(default)]
+        command: Vec<String>,
+    },
 }
 
 /// Validation protocol declared by the component: how its outputs can be
@@ -313,7 +325,9 @@ impl ComponentManifest {
         self
     }
     pub fn with_validity_range(mut self, param: &str, low: f64, high: f64) -> Self {
-        self.validity_domain.ranges.insert(param.to_string(), (low, high));
+        self.validity_domain
+            .ranges
+            .insert(param.to_string(), (low, high));
         self
     }
     pub fn with_permissions(mut self, perms: Vec<Permission>) -> Self {
@@ -331,7 +345,10 @@ impl ComponentManifest {
     /// needs a unit.  A name shared by an input and an output must carry
     /// the same unit.
     pub fn validate_structure(&self) -> crate::Result<()> {
-        for (side, ports) in [("input", &self.input_schema), ("output", &self.output_schema)] {
+        for (side, ports) in [
+            ("input", &self.input_schema),
+            ("output", &self.output_schema),
+        ] {
             let mut seen = std::collections::HashSet::new();
             for p in ports {
                 if p.unit.trim().is_empty() {
@@ -359,7 +376,9 @@ impl ComponentManifest {
             }
         }
         if self.name.is_empty() || self.version.is_empty() {
-            return Err(crate::SimorphError::InvalidInput("manifest name/version empty".into()));
+            return Err(crate::SimorphError::InvalidInput(
+                "manifest name/version empty".into(),
+            ));
         }
         Ok(())
     }

@@ -35,7 +35,13 @@ pub struct TradeoffWeights {
 
 impl Default for TradeoffWeights {
     fn default() -> Self {
-        Self { precision: 1.0, compute_time: 1.0, cost: 1.0, risk: 1.0, information_value: 1.0 }
+        Self {
+            precision: 1.0,
+            compute_time: 1.0,
+            cost: 1.0,
+            risk: 1.0,
+            information_value: 1.0,
+        }
     }
 }
 
@@ -58,8 +64,17 @@ mod tests {
     #[test]
     fn cheaper_experiment_with_same_information_scores_higher() {
         let w = TradeoffWeights::default();
-        let a = Tradeoff { precision: 0.9, compute_time_s: 10.0, cost: 1.0, risk: 0.1, information_value: 2.0 };
-        let b = Tradeoff { compute_time_s: 1000.0, ..a };
+        let a = Tradeoff {
+            precision: 0.9,
+            compute_time_s: 10.0,
+            cost: 1.0,
+            risk: 0.1,
+            information_value: 2.0,
+        };
+        let b = Tradeoff {
+            compute_time_s: 1000.0,
+            ..a
+        };
         assert!(a.utility(&w) > b.utility(&w));
     }
 }

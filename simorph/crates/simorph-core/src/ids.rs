@@ -32,10 +32,16 @@ impl<T> JsonSchema for TypedId<T> {
 
 impl<T> TypedId<T> {
     pub fn new() -> Self {
-        Self { uuid: Uuid::new_v4(), _marker: PhantomData }
+        Self {
+            uuid: Uuid::new_v4(),
+            _marker: PhantomData,
+        }
     }
     pub fn from_uuid(uuid: Uuid) -> Self {
-        Self { uuid, _marker: PhantomData }
+        Self {
+            uuid,
+            _marker: PhantomData,
+        }
     }
     pub fn parse(s: &str) -> Result<Self, uuid::Error> {
         Uuid::parse_str(s).map(Self::from_uuid)
@@ -106,17 +112,61 @@ macro_rules! id_type {
     };
 }
 
-id_type!(#[doc = "Marker for problems."] ProblemMarker, ProblemId);
-id_type!(#[doc = "Marker for models."] ModelMarker, ModelId);
-id_type!(#[doc = "Marker for components (simulators, solvers, tools)."] ComponentMarker, ComponentId);
-id_type!(#[doc = "Marker for experiments (a designed set of runs)."] ExperimentMarker, ExperimentId);
-id_type!(#[doc = "Marker for a single execution run."] RunMarker, RunId);
-id_type!(#[doc = "Marker for hypotheses."] HypothesisMarker, HypothesisId);
-id_type!(#[doc = "Marker for validation records."] ValidationMarker, ValidationId);
-id_type!(#[doc = "Marker for datasets."] DatasetMarker, DatasetId);
-id_type!(#[doc = "Marker for scheduler tasks."] TaskMarker, TaskId);
-id_type!(#[doc = "Marker for research campaigns driven by the scientific director."] CampaignMarker, CampaignId);
-id_type!(#[doc = "Marker for AI improvement candidates."] CandidateMarker, CandidateId);
+id_type!(
+    #[doc = "Marker for problems."]
+    ProblemMarker,
+    ProblemId
+);
+id_type!(
+    #[doc = "Marker for models."]
+    ModelMarker,
+    ModelId
+);
+id_type!(
+    #[doc = "Marker for components (simulators, solvers, tools)."]
+    ComponentMarker,
+    ComponentId
+);
+id_type!(
+    #[doc = "Marker for experiments (a designed set of runs)."]
+    ExperimentMarker,
+    ExperimentId
+);
+id_type!(
+    #[doc = "Marker for a single execution run."]
+    RunMarker,
+    RunId
+);
+id_type!(
+    #[doc = "Marker for hypotheses."]
+    HypothesisMarker,
+    HypothesisId
+);
+id_type!(
+    #[doc = "Marker for validation records."]
+    ValidationMarker,
+    ValidationId
+);
+id_type!(
+    #[doc = "Marker for datasets."]
+    DatasetMarker,
+    DatasetId
+);
+id_type!(
+    #[doc = "Marker for scheduler tasks."]
+    TaskMarker,
+    TaskId
+);
+id_type!(
+    #[doc = "Marker for research campaigns driven by the scientific director."]
+    CampaignMarker,
+    CampaignId
+);
+id_type!(
+    #[doc = "Marker for AI improvement candidates."]
+    CandidateMarker,
+    CandidateId
+);
 
 #[cfg(test)]
 mod tests {

@@ -28,6 +28,9 @@ simorph-telemetry = { path = "../../crates/simorph-telemetry" }
 simorph-svc-scientific-director = { path = "../../services/scientific-director" }
 simorph-svc-campaign-runtime = { path = "../../services/campaign-runtime" }
 simorph-svc-ai-laboratory = { path = "../../services/ai-laboratory" }
+simorph-svc-model-factory = { path = "../../services/model-factory" }
+simorph-svc-simulator-factory = { path = "../../services/simulator-factory" }
+simorph-svc-knowledge-service = { path = "../../services/knowledge-service" }
 simorph-plugin-physics = { path = "../../plugins/physics" }
 simorph-plugin-engineering = { path = "../../plugins/engineering" }
 simorph-plugin-ai = { path = "../../plugins/ai" }

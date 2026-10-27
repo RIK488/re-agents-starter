@@ -9,11 +9,13 @@
 pub mod actions;
 pub mod bench;
 pub mod examples;
+pub mod factories;
 pub mod lab;
 pub mod registry;
 pub mod workspace;
 
 pub use actions::*;
+pub use factories::*;
 pub use registry::*;
 pub use workspace::*;
 
@@ -45,5 +47,10 @@ pub fn implemented_action_ids() -> Vec<&'static str> {
         "schemas.export",
         "bench.run",
         "actions.list",
+        "model.assemble",
+        "model.from_equations",
+        "simulator.generate",
+        "knowledge.memory",
+        "knowledge.transfers",
     ]
 }

@@ -1,7 +1,7 @@
 //! M/M/1 queue steady-state metrics.
 
-use simorph_core::*;
 use serde_json::json;
+use simorph_core::*;
 
 pub struct Mm1Queue {
     m: ComponentManifest,
@@ -51,7 +51,9 @@ impl Component for Mm1Queue {
         let mu = req.get_f64("service_rate")?;
         let rho = lam / mu;
         if rho >= 1.0 {
-            return Err(SimorphError::ValidityDomain(format!("utilization {rho:.3} >= 1: queue is unstable, no steady state")));
+            return Err(SimorphError::ValidityDomain(format!(
+                "utilization {rho:.3} >= 1: queue is unstable, no steady state"
+            )));
         }
         let l = rho / (1.0 - rho);
         let w = l / lam.max(f64::MIN_POSITIVE);
@@ -70,9 +72,23 @@ mod tests {
     #[test]
     fn closed_form_and_instability() {
         let c = Mm1Queue::new();
-        let r = run_component(&c, &TaskRequest::new(c.m.id).input("arrival_rate", 1.0).input("service_rate", 2.0), &ExecutionControl::default()).unwrap();
+        let r = run_component(
+            &c,
+            &TaskRequest::new(c.m.id)
+                .input("arrival_rate", 1.0)
+                .input("service_rate", 2.0),
+            &ExecutionControl::default(),
+        )
+        .unwrap();
         assert_eq!(r.get_f64("mean_customers").unwrap(), 1.0);
         assert_eq!(r.get_f64("mean_wait").unwrap(), 0.5);
-        assert!(run_component(&c, &TaskRequest::new(c.m.id).input("arrival_rate", 3.0).input("service_rate", 2.0), &ExecutionControl::default()).is_err());
+        assert!(run_component(
+            &c,
+            &TaskRequest::new(c.m.id)
+                .input("arrival_rate", 3.0)
+                .input("service_rate", 2.0),
+            &ExecutionControl::default()
+        )
+        .is_err());
     }
 }

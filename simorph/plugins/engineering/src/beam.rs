@@ -1,7 +1,7 @@
 //! Euler–Bernoulli cantilever beam with a point load at the free end.
 
-use simorph_core::*;
 use serde_json::json;
+use simorph_core::*;
 
 pub struct Cantilever {
     m: ComponentManifest,

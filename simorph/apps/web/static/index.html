@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIMORPH</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--fg:#1b1f23;--card:#fff;--line:#d9dde3;--accent:#0b5fff;--muted:#5b6470;--ok:#1b8a4c;--ko:#c0392b}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0f1216;--fg:#e6e9ee;--card:#171b21;--line:#2a313b;--accent:#6ea0ff;--muted:#9aa4b2}}
+:root[data-theme="dark"]{--bg:#0f1216;--fg:#e6e9ee;--card:#171b21;--line:#2a313b;--accent:#6ea0ff;--muted:#9aa4b2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:18px;margin:0}header small{color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:4px;padding:8px 16px;border-bottom:1px solid var(--line)}
+nav button{background:transparent;border:1px solid var(--line);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer}
+nav button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{padding:16px;max-width:1300px;margin:0 auto}
+section{display:none}section.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+label{display:flex;flex-direction:column;font-size:13px;color:var(--muted);gap:4px}
+input,select,textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+textarea{width:100%;min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+button.act{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:6px;cursor:pointer}
+button.act:disabled{opacity:.5}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;max-height:420px;font-size:12.5px}
+.md h1,.md h2,.md h3{margin:.6em 0 .3em}.md table{border-collapse:collapse;font-size:13px}.md td,.md th{border:1px solid var(--line);padding:3px 6px}
+.ok{color:var(--ok)}.ko{color:var(--ko)}.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+#plot,#plot2,#plot3,#plot4{min-height:320px}#three{height:360px;border:1px solid var(--line);border-radius:6px}
+.badge{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header><h1>SIMORPH</h1><small>Laboratoire numérique universel — chaque commande visible est une action implémentée et testée</small><span id="health" class="badge">…</span></header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<script>
+const SPACES=["Projet","Recherche","Modélisation","Simulation","Optimisation","IA","Validation","Journal","Export"];
+const $=s=>document.querySelector(s);
+const api=async(method,url,body)=>{const r=await fetch(url,{method,headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}}if(!r.ok)throw new Error(j.error||t);return j};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function md(src){ // minimal markdown: headings, tables, lists, bold, code
+  const lines=src.split('\n');let out=[],inTable=false;
+  for(let l of lines){
+    if(/^\|/.test(l)){if(/^\|[-| ]+\|$/.test(l))continue;const cells=l.slice(1,-1).split('|').map(c=>c.trim());if(!inTable){out.push('<table>');inTable=true;out.push('<tr>'+cells.map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr>');}else out.push('<tr>'+cells.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>');continue;}
+    if(inTable){out.push('</table>');inTable=false;}
+    let m;if(m=l.match(/^(#{1,3}) (.*)/))out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`);
+    else if(m=l.match(/^\s*- (.*)/))out.push('<div style="margin-left:'+(l.search(/\S/)*8)+'px">• '+inline(m[1])+'</div>');
+    else if(l.trim()==='')out.push('<div style="height:6px"></div>');else out.push('<div>'+inline(l)+'</div>');
+  }
+  if(inTable)out.push('</table>');return out.join('');
+  function inline(s){return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`(.+?)`/g,'<code>$1</code>').replace(/\*(.+?)\*/g,'<i>$1</i>')}
+}
+let state={problem:null,campaignId:null,poll:null};
+function nav(){const n=$('#nav');SPACES.forEach((s,i)=>{const b=document.createElement('button');b.textContent=s;b.onclick=()=>show(i);n.appendChild(b)});}
+function show(i){document.querySelectorAll('nav button').forEach((b,j)=>b.classList.toggle('active',i===j));document.querySelectorAll('section').forEach((s,j)=>s.classList.toggle('active',i===j));}
+function sec(title,html){const s=document.createElement('section');s.innerHTML=`<h2>${title}</h2>${html}`;$('#main').appendChild(s);return s}
+function problemText(){try{return JSON.parse($('#problem').value)}catch(e){throw new Error('Problème JSON invalide : '+e.message)}}
+function out(id,v,isMd){const el=$(id);if(isMd){el.className='md';el.innerHTML=md(v)}else{el.className='';el.innerHTML='<pre>'+esc(typeof v==='string'?v:JSON.stringify(v,null,2))+'</pre>'}}
+async function guard(btn,fn,target){try{btn.disabled=true;await fn()}catch(e){out(target,'Erreur : '+e.message)}finally{btn.disabled=false}}
+// ---------------- Projet
+sec('Espace Projet — objectifs, contraintes, données, état',`
+<div class="card"><div class="row"><label>Exemple <select id="ex"></select></label><button class="act" id="loadEx">Charger l'exemple</button><button class="act" id="validate">Valider la structure</button><span class="muted">Le problème (JSON, schéma <code>problem-spec</code>) est partagé par tous les espaces.</span></div>
+<textarea id="problem" spellcheck="false"></textarea><div id="validateOut"></div></div>
+<div class="card"><h3>Actions disponibles</h3><div class="muted">Liste générée depuis le registre d'actions du serveur (identique au CLI).</div><div id="actions"></div></div>`);
+// ---------------- Recherche
+sec('Espace Recherche — hypothèses, questions ouvertes, décisions scientifiques',`
+<div class="card"><div class="row"><button class="act" id="memory">Mémoire scientifique</button><label>Domaine cible <input id="trfDomain" value="energy"></label><button class="act" id="transfers">Transferts interdisciplinaires (hypothèses)</button></div><div id="memOut"></div></div>
+<div class="card"><div class="row"><button class="act" id="analyse">Analyser le problème</button><button class="act" id="plan">Hypothèses + programme expérimental</button></div><div id="analyseOut"></div></div>`);
+// ---------------- Modélisation
+sec('Espace Modélisation — composants, équations, unités, dépendances',`
+<div class="card"><div class="row"><label>Domaine <input id="fDomain" placeholder="aerospace"></label><label>Capacité <input id="fCap" placeholder="ode"></label><button class="act" id="listComp">Lister les composants</button></div><div id="compOut"></div></div>
+<div class="card"><div class="row"><label>Composant <input id="compName" placeholder="physics.orbit.two_body" size="40"></label><button class="act" id="showComp">Inspecter le manifeste</button></div><div id="manifestOut"></div></div>
+<div class="card"><h3>Chaîne de modèles du problème courant</h3><div class="row"><button class="act" id="assemble">Assembler les modèles (descripteurs, connexions, unités)</button></div><div id="assembleOut"></div></div>
+<div class="card"><h3>Modèle à partir d'équations</h3><div class="row"><label>Nom <input id="eqName" value="decay"></label><label>Équations (une par ligne) <textarea id="eqs" style="min-height:60px;width:360px">d(x)/dt = -k*x</textarea></label><label>Variables (JSON) <input id="eqVars" size="30" value='[{"name":"x","unit":"mol"}]'></label><label>Paramètres (JSON) <input id="eqPars" size="50" value='[{"name":"k","value":0.5,"unit":"1/s"},{"name":"x_0","value":2,"unit":"mol"}]'></label><label>Horizon (s) <input id="eqH" value="5"></label><button class="act" id="eqBtn">Construire et simuler</button></div><div id="plotEq" style="min-height:260px"></div><div id="eqOut"></div></div>
+<div class="card"><h3>Unités</h3><div class="row"><label>Valeur <input id="uv" value="1"></label><label>De <input id="uf" value="au"></label><label>Vers <input id="ut" value="km"></label><button class="act" id="convert">Convertir</button><label>Expression A <input id="ua" value="W"></label><label>Expression B <input id="ub" value="V*A"></label><button class="act" id="checkDim">Vérifier la dimension</button></div><div id="unitsOut"></div></div>`);
+// ---------------- Simulation
+sec('Espace Simulation — paramètres, exécutions, résultats, visualisation',`
+<div class="card"><h3>Campagne complète du directeur scientifique</h3><div class="row"><button class="act" id="runCampaign">Lancer la campagne sur le problème courant</button><button class="act" id="cancelCampaign">Annuler</button><span id="campStatus" class="badge">—</span></div>
+<div class="grid"><div><h4>Événements (en direct, provenance)</h4><pre id="campEvents" style="max-height:260px"></pre></div><div><h4>Résultats des runs</h4><div id="plot"></div></div></div><div id="campReport"></div></div>
+<div class="card"><h3>Générateur de simulateurs (10 étapes)</h3><div class="row"><label>Requête (JSON) <textarea id="simReq" style="min-height:90px;width:640px">{"name":"decay-sim","required_outputs":["x"],"knowns":[{"name":"k","value":0.5,"unit":"1/s"},{"name":"x_0","value":2,"unit":"mol"}],"horizon":5,"target_relative_error":1e-6,"equations":{"name":"decay","equations":["d(x)/dt = -k*x"],"variables":[{"name":"x","unit":"mol"}],"parameters":[{"name":"k","value":0.5,"unit":"1/s"},{"name":"x_0","value":2,"unit":"mol"}]}}</textarea></label><button class="act" id="simGen">Rechercher / intégrer / générer / tester / comparer / documenter</button><span id="simStatus" class="badge">—</span></div><div id="simOut"></div></div>
+<div class="card"><h3>Exécuter un composant</h3><div class="row"><label>Composant <input id="runComp" value="physics.orbit.two_body" size="36"></label><label>Entrées (JSON) <input id="runInputs" size="60" value='{"mu":3.986004418e14,"x":6878137,"y":0,"z":0,"vx":0,"vy":7612.6,"vz":0,"j2":0.00108263,"r_body":6378137,"t_end":5700}'></label><label>Fidélité <input id="runFid" value="1"></label><button class="act" id="runBtn">Exécuter et valider</button></div>
+<div class="grid"><div id="three"></div><div id="plot2"></div></div><div id="runOut"></div></div>`);
+// ---------------- Optimisation
+sec('Espace Optimisation — méthodes, compromis, sensibilité',`
+<div class="card"><div class="row"><button class="act" id="recommend">Recommander des méthodes pour le problème courant</button></div><div id="recOut"></div></div>
+<div class="card"><h3>Sensibilité globale (indices de Sobol)</h3><div class="row"><label>Composant <input id="sobComp" value="engineering.beam.cantilever" size="36"></label><label>Entrées nominales (JSON) <input id="sobInputs" size="50" value='{"length":2,"load":1000,"youngs_modulus":2.1e11,"second_moment":8.33e-6}'></label><label>Écarts-types (JSON) <input id="sobVary" size="40" value='{"length":0.1,"load":100,"second_moment":5e-7}'></label><label>Sortie <input id="sobOut" value="tip_deflection"></label><label>N <input id="sobN" value="512"></label><button class="act" id="sobBtn">Calculer</button></div><div id="plot3"></div><div id="sobRes"></div></div>`);
+// ---------------- IA
+sec('Espace IA — modèles, suites scellées, boucle d\'amélioration',`
+<div class="card"><div class="row"><button class="act" id="suites">Lister les suites scellées</button><label>Suite <select id="suiteSel"><option>classifier</option><option>reasoner</option><option>bandit</option></select></label><label>Itérations <input id="labIt" value="2"></label><button class="act" id="labRun">Lancer la boucle d'amélioration</button><span id="labStatus" class="badge">—</span></div><div id="plot4"></div><div id="labOut"></div></div>`);
+// ---------------- Validation
+sec('Espace Validation — tests, reproduction, bancs',`
+<div class="card"><div class="row"><button class="act" id="expList">Lister les expériences archivées</button><label>Identifiant <input id="expId" size="40"></label><button class="act" id="reproduce">Reproduire et comparer les hachages</button></div><div id="expOut"></div></div>
+<div class="card"><div class="row"><button class="act" id="bench">Exécuter les bancs de référence</button><span id="benchStatus" class="badge">—</span></div><div id="benchOut"></div></div>`);
+// ---------------- Journal
+sec('Espace Journal — provenance et preuves',`
+<div class="card"><div class="row"><label>Type <input id="provKind" placeholder="validation"></label><label>Limite <input id="provLimit" value="50"></label><button class="act" id="provList">Lister</button><button class="act" id="provVerify">Vérifier la chaîne</button><label>Identifiant <input id="provId" size="40"></label><button class="act" id="provExplain">Expliquer (chaîne causale)</button></div><div id="provOut"></div></div>`);
+// ---------------- Export
+sec('Espace Export — schémas, rapports, résultats',`
+<div class="card"><div class="row"><button class="act" id="schemas">Exporter les schémas JSON</button><button class="act" id="dlReport">Télécharger le rapport de la dernière campagne</button><button class="act" id="dlProblem">Télécharger le problème courant</button></div><div id="exportOut"></div></div>`);
+nav();show(0);
+// ---------------- wiring
+(async()=>{try{const h=await api('GET','/health');$('#health').textContent='serveur OK';const ex=await api('GET','/api/problems/examples');ex.forEach(n=>{const o=document.createElement('option');o.textContent=n;$('#ex').appendChild(o)});const p=await api('GET','/api/problems/examples/nanosat');$('#problem').value=JSON.stringify(p,null,2);
+ const acts=await api('GET','/api/actions');$('#actions').innerHTML='<table class="md"><tr><th>Espace</th><th>Action</th><th>CLI</th><th>HTTP</th></tr>'+acts.map(a=>`<tr><td>${esc(a.space)}</td><td>${esc(a.label_fr)}</td><td><code>${esc(a.cli)}</code></td><td><code>${esc(a.http)}</code></td></tr>`).join('')+'</table>';}catch(e){$('#health').textContent='serveur injoignable'}})();
+$('#loadEx').onclick=e=>guard(e.target,async()=>{const p=await api('GET','/api/problems/examples/'+$('#ex').value);$('#problem').value=JSON.stringify(p,null,2);out('#validateOut','Exemple chargé.')},'#validateOut');
+$('#validate').onclick=e=>guard(e.target,async()=>out('#validateOut',await api('POST','/api/problems/validate',problemText())),'#validateOut');
+$('#analyse').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/analyse',problemText());out('#analyseOut',r.markdown,true)},'#analyseOut');
+$('#plan').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/plan',problemText());out('#analyseOut',r.markdown,true)},'#analyseOut');
+$('#listComp').onclick=e=>guard(e.target,async()=>{const q=new URLSearchParams();if($('#fDomain').value)q.set('domain',$('#fDomain').value);if($('#fCap').value)q.set('capability',$('#fCap').value);const r=await api('GET','/api/components?'+q);$('#compOut').innerHTML='<table class="md"><tr><th>Nom</th><th>Domaines</th><th>Capacités</th><th>Entrées</th><th>Sorties</th></tr>'+r.map(m=>`<tr><td><a href="#" onclick="document.getElementById('compName').value='${m.name}';document.getElementById('showComp').click();return false">${m.name}</a></td><td>${m.supported_domains.join(', ')}</td><td>${m.capabilities.map(c=>typeof c==='string'?c:JSON.stringify(c)).join(', ')}</td><td>${m.input_schema.map(p=>p.name+' ['+p.unit+']').join(', ')}</td><td>${m.output_schema.map(p=>p.name+' ['+p.unit+']').join(', ')}</td></tr>`).join('')+'</table>'},'#compOut');
+$('#showComp').onclick=e=>guard(e.target,async()=>out('#manifestOut',await api('GET','/api/components/'+encodeURIComponent($('#compName').value))),'#manifestOut');
+$('#convert').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/units/convert',{value:+$('#uv').value,from:$('#uf').value,to:$('#ut').value});out('#unitsOut',`${$('#uv').value} ${$('#uf').value} = ${r.value} ${r.unit}`)},'#unitsOut');
+$('#checkDim').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/units/check',{a:$('#ua').value,b:$('#ub').value});out('#unitsOut',(r.same_dimension?'Même dimension : ':'Dimensions différentes : ')+r.dimension_a+' vs '+r.dimension_b)},'#unitsOut');
+async function pollJob(id,statusEl,onDone){clearInterval(state.poll);state.poll=setInterval(async()=>{try{const j=await api('GET','/api/jobs/'+id);$(statusEl).textContent=j.status;if(j.kind==='campaign'){const ev=await api('GET','/api/jobs/'+id+'/events');$('#campEvents').textContent=(ev.provenance||[]).slice(-40).map(r=>`${String(r.sequence).padStart(5)} ${r.kind.padEnd(12)} ${r.label}`).join('\n')}if(j.status!=='running'){clearInterval(state.poll);onDone(j)}}catch(e){clearInterval(state.poll);$(statusEl).textContent='erreur : '+e.message}},1000)}
+$('#runCampaign').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/campaigns',problemText());state.campaignId=r.id;$('#campStatus').textContent='running';pollJob(r.id,'#campStatus',j=>{if(j.error)out('#campReport','Erreur : '+j.error);else{out('#campReport',j.report_markdown,true);plotCampaign(j.result)}})},'#campReport');
+$('#cancelCampaign').onclick=e=>guard(e.target,async()=>{if(state.campaignId)await api('POST','/api/jobs/'+state.campaignId+'/cancel')},'#campReport');
+function plotCampaign(c){if(!c||!c.outcomes)return;const runs=c.outcomes.flatMap(o=>o.runs.filter(r=>r.valid));const obj=c.problem.objectives[0];if(!obj||!runs.length)return;const dv=c.problem.design_variables[0];const x=runs.map(r=>dv?r.inputs[dv.name]:runs.indexOf(r));const y=runs.map(r=>r.outputs[obj.variable]);Plotly.newPlot('plot',[{x,y,mode:'markers',type:'scatter',marker:{size:7}}],{title:obj.variable+' vs '+(dv?dv.name:'run'),xaxis:{title:dv?dv.name+' ['+(dv.unit)+']':'run'},yaxis:{title:obj.variable},margin:{t:40}},{responsive:true})}
+$('#runBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/runs',{component:$('#runComp').value,inputs:JSON.parse($('#runInputs').value),fidelity:+$('#runFid').value});out('#runOut',JSON.stringify({outputs:Object.fromEntries(Object.entries(r.result.outputs).filter(([k])=>k!=='trajectory')),metrics:r.result.metrics,warnings:r.result.warnings,validation:{verdict:r.validation.verdict,checks:r.validation.checks.map(c=>c.name+': '+(c.passed?'✓':'✗'))}},null,2));const tr=r.result.outputs.trajectory;if(tr&&tr.times){plotTraj(tr)}},'#runOut');
+function plotTraj(tr){const names=Object.keys(tr.states||{});if(tr.states&&names.length){Plotly.newPlot('plot2',names.slice(0,6).map(n=>({x:tr.times,y:tr.states[n],name:n,mode:'lines'})),{title:'Trajectoire (états)',margin:{t:40}},{responsive:true});if(tr.states.x&&tr.states.y&&tr.states.z)three3d(tr.states.x,tr.states.y,tr.states.z)}}
+function three3d(xs,ys,zs){const el=$('#three');el.innerHTML='';const w=el.clientWidth||600,h=el.clientHeight||360;const sc=new THREE.Scene();const cam=new THREE.PerspectiveCamera(45,w/h,0.01,100);const ren=new THREE.WebGLRenderer({antialias:true});ren.setSize(w,h);el.appendChild(ren.domElement);const R=Math.max(...xs.map((x,i)=>Math.hypot(x,ys[i],zs[i])));const pts=xs.map((x,i)=>new THREE.Vector3(x/R,ys[i]/R,zs[i]/R));sc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x0b5fff})));const earth=new THREE.Mesh(new THREE.SphereGeometry(6378137/R,32,32),new THREE.MeshBasicMaterial({color:0x335577,wireframe:true}));sc.add(earth);cam.position.set(2.2,1.6,2.2);cam.lookAt(0,0,0);let a=0;(function loop(){a+=0.004;cam.position.set(2.8*Math.cos(a),1.4,2.8*Math.sin(a));cam.lookAt(0,0,0);ren.render(sc,cam);requestAnimationFrame(loop)})()}
+$('#recommend').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/optimisation/recommend',problemText());out('#recOut','## Traits du problème\n'+'`'+JSON.stringify(r.features)+'`\n\n## Classement\n'+r.ranking.map(m=>`- **${m.method}** (score ${m.score.toFixed(2)})\n`+m.justification.map(j=>'  - '+j).join('\n')).join('\n'),true)},'#recOut');
+$('#sobBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/uncertainty/sobol',{component:$('#sobComp').value,inputs:JSON.parse($('#sobInputs').value),vary:JSON.parse($('#sobVary').value),output:$('#sobOut').value,n:+$('#sobN').value});const idx=r.result.indices;Plotly.newPlot('plot3',[{x:idx.map(i=>i.name),y:idx.map(i=>i.first_order),name:'S1',type:'bar',error_y:{type:'data',symmetric:false,array:idx.map(i=>i.first_order_ci95[1]-i.first_order),arrayminus:idx.map(i=>i.first_order-i.first_order_ci95[0])}},{x:idx.map(i=>i.name),y:idx.map(i=>i.total_order),name:'ST',type:'bar'}],{title:'Indices de Sobol — '+r.output,barmode:'group',margin:{t:40}},{responsive:true});out('#sobRes',{moyenne:r.result.output_mean,variance:r.result.output_variance,evaluations:r.result.evaluations})},'#sobRes');
+$('#assemble').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/models/assemble',problemText());out('#assembleOut',r.markdown,true)},'#assembleOut');
+$('#eqBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/models/from-equations',{name:$('#eqName').value,equations:$('#eqs').value.split('\n').filter(l=>l.trim()),variables:JSON.parse($('#eqVars').value),parameters:JSON.parse($('#eqPars').value),horizon:+$('#eqH').value});out('#eqOut',r.markdown,true);if(r.trajectory){const st=r.trajectory.states;Plotly.newPlot('plotEq',Object.keys(st).map(n=>({x:r.trajectory.times,y:st[n],name:n,mode:'lines'})),{title:'Simulation RK45 du modèle saisi',margin:{t:40}},{responsive:true})}},'#eqOut');
+$('#simGen').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/simulators/generate',JSON.parse($('#simReq').value));pollJob(r.id,'#simStatus',j=>out('#simOut',j.error?('Erreur : '+j.error):j.report_markdown,!j.error))},'#simOut');
+$('#memory').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/knowledge/memory');out('#memOut',r.markdown,true)},'#memOut');
+$('#transfers').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/knowledge/transfers?domain='+encodeURIComponent($('#trfDomain').value));out('#memOut',r.length?r:'Aucun transfert suggéré : la mémoire ne contient pas encore de méthode appliquée à un concept analogue dans un autre domaine.')},'#memOut');
+$('#suites').onclick=e=>guard(e.target,async()=>out('#labOut',await api('GET','/api/lab/suites')),'#labOut');
+$('#labRun').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/lab/run',{suite:$('#suiteSel').value,iterations:+$('#labIt').value});pollJob(r.id,'#labStatus',j=>{if(j.error)out('#labOut','Erreur : '+j.error);else{out('#labOut',j.report_markdown,true);const its=j.result.iterations;const pm=Object.keys(its[0]?.evaluation.metrics||{})[0];if(pm)Plotly.newPlot('plot4',[{x:its.map((_,i)=>i),y:its.map(i=>i.evaluation.metrics[pm].mean),mode:'lines+markers',text:its.map(i=>i.decision.decision),name:pm}],{title:pm+' par candidat évalué (accepté/rejeté)',margin:{t:40}},{responsive:true})}})},'#labOut');
+$('#expList').onclick=e=>guard(e.target,async()=>out('#expOut',await api('GET','/api/experiments')),'#expOut');
+$('#reproduce').onclick=e=>guard(e.target,async()=>out('#expOut',await api('POST','/api/experiments/'+$('#expId').value+'/reproduce')),'#expOut');
+$('#bench').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/bench');pollJob(r.id,'#benchStatus',j=>out('#benchOut',j.error?('Erreur : '+j.error):j.report_markdown,!j.error))},'#benchOut');
+$('#provList').onclick=e=>guard(e.target,async()=>{const q=new URLSearchParams({limit:$('#provLimit').value});if($('#provKind').value)q.set('kind',$('#provKind').value);const r=await api('GET','/api/provenance?'+q);$('#provOut').innerHTML=`<div class="muted">${r.total} enregistrements</div><table class="md"><tr><th>#</th><th>Horodatage</th><th>Type</th><th>Identifiant</th><th>Libellé</th></tr>`+r.records.map(x=>`<tr><td>${x.sequence}</td><td>${x.timestamp}</td><td>${x.kind}</td><td><a href="#" onclick="document.getElementById('provId').value='${x.id}';document.getElementById('provExplain').click();return false">${x.id}</a></td><td>${esc(x.label)}</td></tr>`).join('')+'</table>'},'#provOut');
+$('#provVerify').onclick=e=>guard(e.target,async()=>out('#provOut',await api('GET','/api/provenance/verify')),'#provOut');
+$('#provExplain').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/provenance/'+$('#provId').value+'/explain');out('#provOut',r.markdown,true)},'#provOut');
+$('#schemas').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/schemas');out('#exportOut',Object.keys(r).map(k=>'- '+k).join('\n'),true);dl('simorph-schemas.json',JSON.stringify(r,null,2))},'#exportOut');
+$('#dlReport').onclick=e=>guard(e.target,async()=>{if(!state.campaignId)throw new Error('aucune campagne lancée');const j=await api('GET','/api/jobs/'+state.campaignId);dl('rapport-'+state.campaignId+'.md',j.report_markdown||'');dl('campagne-'+state.campaignId+'.json',JSON.stringify(j.result,null,2))},'#exportOut');
+$('#dlProblem').onclick=e=>guard(e.target,async()=>dl('probleme.json',$('#problem').value),'#exportOut');
+function dl(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/octet-stream'}));a.download=name;a.click()}
+</script>
+</body>
+</html>

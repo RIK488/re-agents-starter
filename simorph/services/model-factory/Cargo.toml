@@ -3,6 +3,19 @@ name = "simorph-svc-model-factory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "SIMORPH model factory: assembles model descriptors from a problem and the registry, builds executable models from user-typed equations with dimensional checking."
 
 [dependencies]
 simorph-core = { path = "../../crates/simorph-core" }
+simorph-units = { path = "../../crates/simorph-units" }
+simorph-model-registry = { path = "../../crates/simorph-model-registry" }
+simorph-simulation = { path = "../../crates/simorph-simulation" }
+simorph-validation = { path = "../../crates/simorph-validation" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+indexmap.workspace = true
+
+[dev-dependencies]
+simorph-plugin-physics = { path = "../../plugins/physics" }
+simorph-plugin-engineering = { path = "../../plugins/engineering" }

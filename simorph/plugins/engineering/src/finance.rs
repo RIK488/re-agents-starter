@@ -1,7 +1,7 @@
 //! Net present value and internal rate of return of a cash-flow series.
 
-use simorph_core::*;
 use serde_json::json;
+use simorph_core::*;
 
 pub struct NetPresentValue {
     m: ComponentManifest,
@@ -38,7 +38,11 @@ impl NetPresentValue {
     }
 
     pub fn npv(flows: &[f64], r: f64) -> f64 {
-        flows.iter().enumerate().map(|(t, cf)| cf / (1.0 + r).powi(t as i32)).sum()
+        flows
+            .iter()
+            .enumerate()
+            .map(|(t, cf)| cf / (1.0 + r).powi(t as i32))
+            .sum()
     }
 
     pub fn irr(flows: &[f64]) -> Option<f64> {
@@ -86,7 +90,8 @@ impl Component for NetPresentValue {
             Some(i) => res = res.output("irr", i),
             None => {
                 res = res.output("irr", f64::NAN);
-                res.warnings.push("IRR undefined: no sign change of NPV over [-99%, 1000%]".into());
+                res.warnings
+                    .push("IRR undefined: no sign change of NPV over [-99%, 1000%]".into());
             }
         }
         let mut cum = 0.0;
@@ -110,7 +115,9 @@ mod tests {
     #[test]
     fn npv_irr_payback() {
         let c = NetPresentValue::new();
-        let req = TaskRequest::new(c.m.id).input("cash_flows", json!([-100.0, 60.0, 60.0])).input("discount_rate", 0.1);
+        let req = TaskRequest::new(c.m.id)
+            .input("cash_flows", json!([-100.0, 60.0, 60.0]))
+            .input("discount_rate", 0.1);
         let r = run_component(&c, &req, &ExecutionControl::default()).unwrap();
         assert!((r.get_f64("npv").unwrap() - (-100.0 + 60.0 / 1.1 + 60.0 / 1.21)).abs() < 1e-12);
         // IRR of [-100, 60, 60]: 60/(1+i) + 60/(1+i)^2 = 100 -> i = 0.1306623...

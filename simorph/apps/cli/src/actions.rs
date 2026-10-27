@@ -50,6 +50,11 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo { id: "schemas.export", space: "Export", label_fr: "Exporter les schémas JSON des contrats", cli: "simorph schemas export <dir>", http: "GET /api/schemas" },
     ActionInfo { id: "bench.run", space: "Validation", label_fr: "Exécuter les bancs de référence (intégrateurs, Sobol, optimiseurs)", cli: "simorph bench", http: "POST /api/bench" },
     ActionInfo { id: "actions.list", space: "Projet", label_fr: "Lister les actions disponibles", cli: "simorph actions", http: "GET /api/actions" },
+    ActionInfo { id: "model.assemble", space: "Modélisation", label_fr: "Assembler la chaîne de modèles d'un problème (descripteurs, connexions, unités)", cli: "simorph model assemble <file>", http: "POST /api/models/assemble" },
+    ActionInfo { id: "model.from_equations", space: "Modélisation", label_fr: "Construire et simuler un modèle à partir d'équations typées", cli: "simorph model equations <file.json>", http: "POST /api/models/from-equations" },
+    ActionInfo { id: "simulator.generate", space: "Simulation", label_fr: "Générer / intégrer un simulateur (pipeline en 10 étapes)", cli: "simorph simulator generate <request.json>", http: "POST /api/simulators/generate" },
+    ActionInfo { id: "knowledge.memory", space: "Recherche", label_fr: "Consulter la mémoire scientifique (connaissances, hypothèses, échecs, décisions)", cli: "simorph knowledge memory", http: "GET /api/knowledge/memory" },
+    ActionInfo { id: "knowledge.transfers", space: "Recherche", label_fr: "Suggérer des transferts interdisciplinaires (hypothèses à vérifier)", cli: "simorph knowledge transfers --domain D", http: "GET /api/knowledge/transfers?domain=D" },
 ];
 
 // ------------------------------------------------------------------ helpers

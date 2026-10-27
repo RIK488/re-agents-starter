@@ -169,12 +169,18 @@ pub struct ProblemSpec {
 pub struct Budget {
     pub max_wall_time_s: f64,
     pub max_runs: u64,
+    /// Monetary/resource cap; `f64::MAX` means unlimited (JSON cannot carry
+    /// infinity, so infinities are never used in serialised contracts).
     pub max_cost: f64,
 }
 
 impl Default for Budget {
     fn default() -> Self {
-        Self { max_wall_time_s: 3600.0, max_runs: 10_000, max_cost: f64::INFINITY }
+        Self {
+            max_wall_time_s: 3600.0,
+            max_runs: 10_000,
+            max_cost: f64::MAX,
+        }
     }
 }
 
@@ -200,7 +206,9 @@ impl ProblemSpec {
     /// Basic consistency checks that do not need unit parsing.
     pub fn validate_structure(&self) -> crate::Result<()> {
         if self.title.trim().is_empty() {
-            return Err(crate::SimorphError::InvalidInput("problem title empty".into()));
+            return Err(crate::SimorphError::InvalidInput(
+                "problem title empty".into(),
+            ));
         }
         for d in &self.design_variables {
             if d.low > d.high {
@@ -225,6 +233,14 @@ impl ProblemSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_problem_round_trips_through_json() {
+        let p = ProblemSpec::new("t", "d");
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ProblemSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(p, back);
+    }
 
     #[test]
     fn target_objective_needs_value() {

@@ -59,7 +59,9 @@ pub struct Deadline {
 
 impl Deadline {
     pub fn after(d: Duration) -> Self {
-        Self { at: Instant::now() + d }
+        Self {
+            at: Instant::now() + d,
+        }
     }
     pub fn expired(&self) -> bool {
         Instant::now() >= self.at
@@ -78,13 +80,19 @@ pub struct ExecutionControl {
 
 impl Default for ExecutionControl {
     fn default() -> Self {
-        Self { cancel: CancellationToken::new(), deadline: None }
+        Self {
+            cancel: CancellationToken::new(),
+            deadline: None,
+        }
     }
 }
 
 impl ExecutionControl {
     pub fn with_timeout(d: Duration) -> Self {
-        Self { cancel: CancellationToken::new(), deadline: Some(Deadline::after(d)) }
+        Self {
+            cancel: CancellationToken::new(),
+            deadline: Some(Deadline::after(d)),
+        }
     }
     /// Check both cancellation and deadline.
     pub fn check(&self) -> Result<()> {
@@ -152,10 +160,15 @@ impl TaskRequest {
         self.inputs
             .get(name)
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| crate::SimorphError::InvalidInput(format!("missing numeric input `{name}`")))
+            .ok_or_else(|| {
+                crate::SimorphError::InvalidInput(format!("missing numeric input `{name}`"))
+            })
     }
     pub fn get_f64_or(&self, name: &str, default: f64) -> f64 {
-        self.inputs.get(name).and_then(|v| v.as_f64()).unwrap_or(default)
+        self.inputs
+            .get(name)
+            .and_then(|v| v.as_f64())
+            .unwrap_or(default)
     }
     pub fn get_vec_f64(&self, name: &str) -> Result<Vec<f64>> {
         let v = self
@@ -164,7 +177,9 @@ impl TaskRequest {
             .ok_or_else(|| crate::SimorphError::InvalidInput(format!("missing input `{name}`")))?;
         v.as_array()
             .map(|a| a.iter().filter_map(|x| x.as_f64()).collect())
-            .ok_or_else(|| crate::SimorphError::InvalidInput(format!("input `{name}` is not an array")))
+            .ok_or_else(|| {
+                crate::SimorphError::InvalidInput(format!("input `{name}` is not an array"))
+            })
     }
     /// Hash of everything that determines the output (for reproduction).
     pub fn content_hash(&self) -> String {
@@ -233,14 +248,18 @@ impl TaskResult {
         self.outputs
             .get(name)
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| crate::SimorphError::InvalidInput(format!("missing numeric output `{name}`")))
+            .ok_or_else(|| {
+                crate::SimorphError::InvalidInput(format!("missing numeric output `{name}`"))
+            })
     }
     pub fn get_vec_f64(&self, name: &str) -> Result<Vec<f64>> {
         self.outputs
             .get(name)
             .and_then(|v| v.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_f64()).collect())
-            .ok_or_else(|| crate::SimorphError::InvalidInput(format!("missing array output `{name}`")))
+            .ok_or_else(|| {
+                crate::SimorphError::InvalidInput(format!("missing array output `{name}`"))
+            })
     }
     /// Hash of the outputs (used to check reproducibility).
     pub fn output_hash(&self) -> String {
@@ -258,10 +277,16 @@ pub struct Compatibility {
 
 impl Compatibility {
     pub fn ok() -> Self {
-        Self { compatible: true, reasons: vec![] }
+        Self {
+            compatible: true,
+            reasons: vec![],
+        }
     }
     pub fn no(reason: impl Into<String>) -> Self {
-        Self { compatible: false, reasons: vec![reason.into()] }
+        Self {
+            compatible: false,
+            reasons: vec![reason.into()],
+        }
     }
 }
 
@@ -287,7 +312,9 @@ pub trait Component: Send + Sync {
                             ));
                         }
                     }
-                    if let (Some(x), Some((lo, hi))) = (v.as_f64(), m.validity_domain.ranges.get(&p.name)) {
+                    if let (Some(x), Some((lo, hi))) =
+                        (v.as_f64(), m.validity_domain.ranges.get(&p.name))
+                    {
                         if x < *lo || x > *hi {
                             reasons.push(format!(
                                 "input `{}`={x} outside validity domain [{lo}, {hi}]",
@@ -298,7 +325,10 @@ pub trait Component: Send + Sync {
                 }
             }
         }
-        Compatibility { compatible: reasons.is_empty(), reasons }
+        Compatibility {
+            compatible: reasons.is_empty(),
+            reasons,
+        }
     }
 
     /// Prepare the execution environment (download, compile, warm caches).
@@ -313,7 +343,11 @@ pub trait Component: Send + Sync {
 }
 
 /// Helper: run a component with timing and compatibility checks.
-pub fn run_component(c: &dyn Component, req: &TaskRequest, ctl: &ExecutionControl) -> Result<TaskResult> {
+pub fn run_component(
+    c: &dyn Component,
+    req: &TaskRequest,
+    ctl: &ExecutionControl,
+) -> Result<TaskResult> {
     let compat = c.check_compatibility(req);
     if !compat.compatible {
         return Err(crate::SimorphError::Incompatible(compat.reasons.join("; ")));
@@ -321,7 +355,9 @@ pub fn run_component(c: &dyn Component, req: &TaskRequest, ctl: &ExecutionContro
     let start = Instant::now();
     let mut res = c.execute(req, ctl)?;
     res.wall_time_ms = start.elapsed().as_millis() as u64;
-    res.metrics.entry("wall_time_ms".into()).or_insert(res.wall_time_ms as f64);
+    res.metrics
+        .entry("wall_time_ms".into())
+        .or_insert(res.wall_time_ms as f64);
     Ok(res)
 }
 
@@ -370,7 +406,10 @@ mod tests {
         assert_ne!(a.content_hash(), b.content_hash());
         assert_ne!(a.content_hash(), c.content_hash());
         // run_id does not affect the hash: same science, same hash.
-        let a2 = TaskRequest { run_id: RunId::new(), ..a.clone() };
+        let a2 = TaskRequest {
+            run_id: RunId::new(),
+            ..a.clone()
+        };
         assert_eq!(a.content_hash(), a2.content_hash());
     }
 

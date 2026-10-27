@@ -32,14 +32,38 @@ pub struct Dimension {
 }
 
 impl Dimension {
-    pub const NONE: Dimension = Dimension { num: [0; 7], den: 1 };
-    pub const LENGTH: Dimension = Dimension { num: [1, 0, 0, 0, 0, 0, 0], den: 1 };
-    pub const MASS: Dimension = Dimension { num: [0, 1, 0, 0, 0, 0, 0], den: 1 };
-    pub const TIME: Dimension = Dimension { num: [0, 0, 1, 0, 0, 0, 0], den: 1 };
-    pub const CURRENT: Dimension = Dimension { num: [0, 0, 0, 1, 0, 0, 0], den: 1 };
-    pub const TEMPERATURE: Dimension = Dimension { num: [0, 0, 0, 0, 1, 0, 0], den: 1 };
-    pub const AMOUNT: Dimension = Dimension { num: [0, 0, 0, 0, 0, 1, 0], den: 1 };
-    pub const LUMINOSITY: Dimension = Dimension { num: [0, 0, 0, 0, 0, 0, 1], den: 1 };
+    pub const NONE: Dimension = Dimension {
+        num: [0; 7],
+        den: 1,
+    };
+    pub const LENGTH: Dimension = Dimension {
+        num: [1, 0, 0, 0, 0, 0, 0],
+        den: 1,
+    };
+    pub const MASS: Dimension = Dimension {
+        num: [0, 1, 0, 0, 0, 0, 0],
+        den: 1,
+    };
+    pub const TIME: Dimension = Dimension {
+        num: [0, 0, 1, 0, 0, 0, 0],
+        den: 1,
+    };
+    pub const CURRENT: Dimension = Dimension {
+        num: [0, 0, 0, 1, 0, 0, 0],
+        den: 1,
+    };
+    pub const TEMPERATURE: Dimension = Dimension {
+        num: [0, 0, 0, 0, 1, 0, 0],
+        den: 1,
+    };
+    pub const AMOUNT: Dimension = Dimension {
+        num: [0, 0, 0, 0, 0, 1, 0],
+        den: 1,
+    };
+    pub const LUMINOSITY: Dimension = Dimension {
+        num: [0, 0, 0, 0, 0, 0, 1],
+        den: 1,
+    };
 
     fn gcd(a: i16, b: i16) -> i16 {
         let (mut a, mut b) = (a.abs(), b.abs());
@@ -96,7 +120,11 @@ impl Dimension {
         for n in &mut num {
             *n *= p;
         }
-        Dimension { num, den: self.den * q }.normalise()
+        Dimension {
+            num,
+            den: self.den * q,
+        }
+        .normalise()
     }
 
     pub fn is_dimensionless(&self) -> bool {
@@ -147,7 +175,12 @@ pub struct Unit {
 
 impl Unit {
     pub fn dimensionless() -> Self {
-        Self { dimension: Dimension::NONE, factor: 1.0, offset: 0.0, expr: "1".into() }
+        Self {
+            dimension: Dimension::NONE,
+            factor: 1.0,
+            offset: 0.0,
+            expr: "1".into(),
+        }
     }
     pub fn to_si(&self, v: f64) -> f64 {
         self.factor * v + self.offset
@@ -160,7 +193,10 @@ impl Unit {
 /// Base (unprefixed) units known to the registry.  `(symbol, factor, offset, dimension, allow_prefix)`.
 fn base_unit(symbol: &str) -> Option<(f64, f64, Dimension, bool)> {
     use Dimension as D;
-    let d = |l: i16, m: i16, t: i16, i: i16, th: i16, n: i16, j: i16| D { num: [l, m, t, i, th, n, j], den: 1 };
+    let d = |l: i16, m: i16, t: i16, i: i16, th: i16, n: i16, j: i16| D {
+        num: [l, m, t, i, th, n, j],
+        den: 1,
+    };
     Some(match symbol {
         // SI base
         "m" => (1.0, 0.0, D::LENGTH, true),
@@ -296,15 +332,28 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
     while i < chars.len() {
         let c = chars[i];
         match c {
-            ' ' | '\t' | '·' | '.' if !(c == '.' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()) => {
+            ' ' | '\t' | '·' | '.'
+                if !(c == '.' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit()) =>
+            {
                 // whitespace or middle dot acts as multiplication when between symbols
-                if matches!(out.last(), Some(Tok::Sym(_)) | Some(Tok::RParen) | Some(Tok::Num(_))) {
+                if matches!(
+                    out.last(),
+                    Some(Tok::Sym(_)) | Some(Tok::RParen) | Some(Tok::Num(_))
+                ) {
                     // look ahead for a symbol start
                     let mut j = i + 1;
                     while j < chars.len() && chars[j] == ' ' {
                         j += 1;
                     }
-                    if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '(' || chars[j] == '°' || chars[j] == '%' || chars[j] == 'Ω' || chars[j] == 'µ' || chars[j] == 'μ') {
+                    if j < chars.len()
+                        && (chars[j].is_alphabetic()
+                            || chars[j] == '('
+                            || chars[j] == '°'
+                            || chars[j] == '%'
+                            || chars[j] == 'Ω'
+                            || chars[j] == 'µ'
+                            || chars[j] == 'μ')
+                    {
                         out.push(Tok::Mul);
                     }
                 }
@@ -333,24 +382,44 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
             '-' | '+' | '0'..='9' | '.' => {
                 let start = i;
                 i += 1;
-                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == 'e' || chars[i] == 'E' || ((chars[i] == '-' || chars[i] == '+') && matches!(chars[i - 1], 'e' | 'E'))) {
+                while i < chars.len()
+                    && (chars[i].is_ascii_digit()
+                        || chars[i] == '.'
+                        || chars[i] == 'e'
+                        || chars[i] == 'E'
+                        || ((chars[i] == '-' || chars[i] == '+')
+                            && matches!(chars[i - 1], 'e' | 'E')))
+                {
                     i += 1;
                 }
                 let txt: String = chars[start..i].iter().collect();
-                let v: f64 = txt
-                    .parse()
-                    .map_err(|_| SimorphError::Unit(format!("bad number `{txt}` in unit expression")))?;
+                let v: f64 = txt.parse().map_err(|_| {
+                    SimorphError::Unit(format!("bad number `{txt}` in unit expression"))
+                })?;
                 out.push(Tok::Num(v));
             }
-            _ if c.is_alphabetic() || c == '°' || c == '%' || c == 'Ω' || c == 'µ' || c == 'μ' => {
+            _ if c.is_alphabetic() || c == '°' || c == '%' || c == 'Ω' || c == 'µ' || c == 'μ' =>
+            {
                 let start = i;
-                while i < chars.len() && (chars[i].is_alphabetic() || chars[i] == '°' || chars[i] == '%' || chars[i] == 'Ω' || chars[i] == 'µ' || chars[i] == 'μ' || chars[i] == '_') {
+                while i < chars.len()
+                    && (chars[i].is_alphabetic()
+                        || chars[i] == '°'
+                        || chars[i] == '%'
+                        || chars[i] == 'Ω'
+                        || chars[i] == 'µ'
+                        || chars[i] == 'μ'
+                        || chars[i] == '_')
+                {
                     i += 1;
                 }
                 let sym: String = chars[start..i].iter().collect();
                 out.push(Tok::Sym(sym));
             }
-            _ => return Err(SimorphError::Unit(format!("unexpected character `{c}` in unit expression `{s}`"))),
+            _ => {
+                return Err(SimorphError::Unit(format!(
+                    "unexpected character `{c}` in unit expression `{s}`"
+                )))
+            }
         }
     }
     Ok(out)
@@ -416,7 +485,9 @@ impl Parser {
                     if (p / q as f64 - v).abs() < 1e-12 {
                         Ok((p as i16, q))
                     } else {
-                        Err(SimorphError::Unit(format!("unsupported fractional exponent {v}")))
+                        Err(SimorphError::Unit(format!(
+                            "unsupported fractional exponent {v}"
+                        )))
                     }
                 }
             }
@@ -471,15 +542,26 @@ pub fn parse_unit(expr: &str) -> Result<Unit> {
         return Ok(Unit::dimensionless());
     }
     let toks = tokenize(trimmed)?;
-    let mut p = Parser { toks, pos: 0, atoms: 0 };
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        atoms: 0,
+    };
     let (factor, offset, dimension) = p.expr()?;
     if p.pos != p.toks.len() {
-        return Err(SimorphError::Unit(format!("trailing tokens in unit expression `{expr}`")));
+        return Err(SimorphError::Unit(format!(
+            "trailing tokens in unit expression `{expr}`"
+        )));
     }
     // Offsets (°C, °F) only apply for a lone symbol; inside compounds they
     // denote temperature *differences*.
     let offset = if p.atoms == 1 { offset } else { 0.0 };
-    Ok(Unit { dimension, factor, offset, expr: trimmed.to_string() })
+    Ok(Unit {
+        dimension,
+        factor,
+        offset,
+        expr: trimmed.to_string(),
+    })
 }
 
 /// Convert `value` from unit `from` to unit `to`.

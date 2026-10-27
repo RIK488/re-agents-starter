@@ -1,8 +1,8 @@
 //! Darcy–Weisbach pressure drop in a circular pipe with Colebrook–White
 //! friction factor (turbulent) or Poiseuille (laminar).
 
-use simorph_core::*;
 use serde_json::json;
+use simorph_core::*;
 
 pub struct PipeFlow {
     m: ComponentManifest,
@@ -87,7 +87,9 @@ impl Component for PipeFlow {
         } else if re > 4000.0 {
             Self::colebrook(re, eps / d)
         } else {
-            warnings.push(format!("transitional regime Re={re:.0}: friction factor interpolated, high uncertainty"));
+            warnings.push(format!(
+                "transitional regime Re={re:.0}: friction factor interpolated, high uncertainty"
+            ));
             let fl = 64.0 / 2300.0;
             let ft = Self::colebrook(4000.0, eps / d);
             fl + (ft - fl) * (re - 2300.0) / 1700.0

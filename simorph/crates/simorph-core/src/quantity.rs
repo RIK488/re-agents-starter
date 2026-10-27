@@ -47,7 +47,13 @@ pub struct Quantity {
 
 impl Quantity {
     pub fn new(name: impl Into<String>, value: f64, unit: impl Into<String>) -> Self {
-        Self { name: name.into(), value, unit: unit.into(), uncertainty: Uncertainty::Undeclared, description: None }
+        Self {
+            name: name.into(),
+            value,
+            unit: unit.into(),
+            uncertainty: Uncertainty::Undeclared,
+            description: None,
+        }
     }
     pub fn with_uncertainty(mut self, u: Uncertainty) -> Self {
         self.uncertainty = u;
@@ -75,7 +81,13 @@ pub struct Port {
 
 impl Port {
     pub fn scalar(name: impl Into<String>, unit: impl Into<String>) -> Self {
-        Self { name: name.into(), unit: unit.into(), description: None, shape: vec![], range: None }
+        Self {
+            name: name.into(),
+            unit: unit.into(),
+            description: None,
+            shape: vec![],
+            range: None,
+        }
     }
     pub fn with_range(mut self, low: f64, high: f64) -> Self {
         self.range = Some((low, high));

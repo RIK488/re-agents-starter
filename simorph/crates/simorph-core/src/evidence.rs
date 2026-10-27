@@ -109,7 +109,8 @@ mod tests {
     #[test]
     fn simulated_cannot_become_proven_without_proof() {
         let mut c = Claim::hypothesis("x");
-        c.promote(EvidenceLevel::Simulated, ValidationId::new()).unwrap();
+        c.promote(EvidenceLevel::Simulated, ValidationId::new())
+            .unwrap();
         assert!(c
             .promote(EvidenceLevel::MathematicallyProven, ValidationId::new())
             .is_err());
@@ -118,7 +119,8 @@ mod tests {
     #[test]
     fn empirical_validation_requires_a_record() {
         let mut c = Claim::hypothesis("y");
-        c.promote(EvidenceLevel::Computed, ValidationId::new()).unwrap();
+        c.promote(EvidenceLevel::Computed, ValidationId::new())
+            .unwrap();
         c.promote(EvidenceLevel::EmpiricallyValidated, ValidationId::new())
             .unwrap();
         assert_eq!(c.validations.len(), 2);

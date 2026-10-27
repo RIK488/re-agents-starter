@@ -1,7 +1,7 @@
 //! Wind turbine power: P = ½ ρ A v³ Cp, with Cp ≤ Betz limit 16/27.
 
-use simorph_core::*;
 use serde_json::json;
+use simorph_core::*;
 
 pub struct WindTurbine {
     m: ComponentManifest,
@@ -59,8 +59,14 @@ impl Component for WindTurbine {
         let cout = req.get_f64("cut_out")?;
         let area = std::f64::consts::PI * (d / 2.0).powi(2);
         let available = 0.5 * rho * area * v.powi(3);
-        let p = if v < cin || v > cout { 0.0 } else { (available * cp).min(rated) };
-        Ok(TaskResult::new(req, EvidenceLevel::Computed).output("power", p).output("available_power", available))
+        let p = if v < cin || v > cout {
+            0.0
+        } else {
+            (available * cp).min(rated)
+        };
+        Ok(TaskResult::new(req, EvidenceLevel::Computed)
+            .output("power", p)
+            .output("available_power", available))
     }
 }
 
@@ -71,11 +77,32 @@ mod tests {
     #[test]
     fn cubic_law_and_cutoffs() {
         let c = WindTurbine::new();
-        let base = |v: f64| TaskRequest::new(c.m.id).input("wind_speed", v).input("rotor_diameter", 100.0).input("air_density", 1.225).input("power_coefficient", 0.4).input("rated_power", 1e7).input("cut_in", 3.0).input("cut_out", 25.0);
-        let p10 = run_component(&c, &base(10.0), &ExecutionControl::default()).unwrap().get_f64("power").unwrap();
-        let p5 = run_component(&c, &base(5.0), &ExecutionControl::default()).unwrap().get_f64("power").unwrap();
+        let base = |v: f64| {
+            TaskRequest::new(c.m.id)
+                .input("wind_speed", v)
+                .input("rotor_diameter", 100.0)
+                .input("air_density", 1.225)
+                .input("power_coefficient", 0.4)
+                .input("rated_power", 1e7)
+                .input("cut_in", 3.0)
+                .input("cut_out", 25.0)
+        };
+        let p10 = run_component(&c, &base(10.0), &ExecutionControl::default())
+            .unwrap()
+            .get_f64("power")
+            .unwrap();
+        let p5 = run_component(&c, &base(5.0), &ExecutionControl::default())
+            .unwrap()
+            .get_f64("power")
+            .unwrap();
         assert!((p10 / p5 - 8.0).abs() < 1e-9);
-        assert_eq!(run_component(&c, &base(30.0), &ExecutionControl::default()).unwrap().get_f64("power").unwrap(), 0.0);
+        assert_eq!(
+            run_component(&c, &base(30.0), &ExecutionControl::default())
+                .unwrap()
+                .get_f64("power")
+                .unwrap(),
+            0.0
+        );
         // Betz: Cp above 16/27 is outside the port range and refused
         let bad = base(10.0).input("power_coefficient", 0.7);
         assert!(run_component(&c, &bad, &ExecutionControl::default()).is_err());

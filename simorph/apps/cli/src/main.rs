@@ -106,6 +106,53 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Model factory.
+    Model {
+        #[command(subcommand)]
+        cmd: ModelCmd,
+    },
+    /// Simulator factory (ten-step pipeline).
+    Simulator {
+        #[command(subcommand)]
+        cmd: SimulatorCmd,
+    },
+    /// Scientific memory and interdisciplinary transfer.
+    Knowledge {
+        #[command(subcommand)]
+        cmd: KnowledgeCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelCmd {
+    /// Assemble the model chain of a problem file.
+    Assemble {
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Build (and simulate) a model from an equations request JSON file.
+    Equations {
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+#[derive(Subcommand)]
+enum SimulatorCmd {
+    Generate {
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+#[derive(Subcommand)]
+enum KnowledgeCmd {
+    Memory,
+    Transfers {
+        #[arg(long)]
+        domain: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -454,6 +501,61 @@ fn real_main() -> Result<()> {
                 println!("{}", bench::to_markdown(&r))
             }
         }
+        Cmd::Model { cmd } => match cmd {
+            ModelCmd::Assemble { file, json } => {
+                let out = assemble_model(&load_problem(&file)?)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&out.assembly)?)
+                } else {
+                    println!("{}", out.markdown)
+                }
+            }
+            ModelCmd::Equations { file, json } => {
+                let req: EquationsRequest = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+                let out = model_from_equations(&req, &ctl)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&out)?)
+                } else {
+                    println!("{}", out.markdown)
+                }
+            }
+        },
+        Cmd::Simulator { cmd } => match cmd {
+            SimulatorCmd::Generate { file, json } => {
+                let ws = Workspace::open(cli.data)?;
+                let req: GenerateRequest = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+                let out = generate_simulator(&ws, &req, &ctl)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&out.report)?)
+                } else {
+                    println!("{}", out.markdown)
+                }
+            }
+        },
+        Cmd::Knowledge { cmd } => match cmd {
+            KnowledgeCmd::Memory => {
+                let ws = Workspace::open(cli.data)?;
+                println!("{}", memory_report(&ws)?);
+            }
+            KnowledgeCmd::Transfers { domain } => {
+                let ws = Workspace::open(cli.data)?;
+                let t = transfers(&ws, &domain)?;
+                if t.is_empty() {
+                    println!("aucun transfert suggéré vers « {domain} » (la mémoire ne contient pas encore de méthode analogue)");
+                }
+                for x in t {
+                    println!(
+                        "{} : {} → {} (confiance {:.2}, statut {}) — réfutation : {}",
+                        x.method,
+                        x.source_domain,
+                        x.target_domain,
+                        x.confidence,
+                        x.status,
+                        x.falsification_criterion
+                    );
+                }
+            }
+        },
         Cmd::Demo { name, out } => {
             let p = examples::example(&name).ok_or_else(|| {
                 SimorphError::NotFound(format!(
