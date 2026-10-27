@@ -47,6 +47,12 @@ impl CosimSlave for AlgebraicSlave {
         self.recompute()
     }
     fn set_input(&mut self, name: &str, value: f64) -> Result<()> {
+        if crate::slave::find_port(&self.manifest.input_schema, name).is_none() {
+            return Err(SimorphError::NotFound(format!(
+                "input `{name}` of `{}`",
+                self.manifest.name
+            )));
+        }
         self.values.insert(name.to_string(), value);
         Ok(())
     }

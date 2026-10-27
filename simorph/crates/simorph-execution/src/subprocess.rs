@@ -32,6 +32,9 @@ struct Child_ {
 
 impl Child_ {
     fn kill(&mut self) {
+        // The child leads its own process group (see `isolation`): kill the
+        // whole group so that grandchildren cannot outlive a timeout.
+        crate::isolation::kill_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -120,9 +123,19 @@ impl SubprocessComponent {
         if let Some(wd) = &self.policy.working_dir {
             cmd.current_dir(wd);
         }
+        if self.policy.require_os_isolation && !crate::isolation::supported() {
+            return Err(SimorphError::PermissionDenied(
+                "OS isolation required by the sandbox policy is not supported on this platform"
+                    .into(),
+            ));
+        }
+        crate::isolation::apply(
+            &mut cmd,
+            crate::isolation::OsLimits::from_policy(&self.policy),
+        );
         let mut child = cmd.spawn().map_err(|e| SimorphError::Component {
             component: self.command.clone(),
-            message: format!("spawn failed: {e}"),
+            message: format!("spawn failed (sandbox isolation included): {e}"),
         })?;
         let stdin = child.stdin.take().expect("piped");
         let stdout = child.stdout.take().expect("piped");
@@ -228,6 +241,21 @@ impl SubprocessComponent {
             }
             match child.lines.recv_timeout(Duration::from_millis(20)) {
                 Ok(Ok(l)) => {
+                    // Re-check the cap after the line is counted: a single
+                    // oversized line must be reported as an overflow, not
+                    // parsed (and not mis-reported as a protocol violation).
+                    if child.bytes.load(Ordering::Relaxed) > self.policy.max_output_bytes {
+                        child.kill();
+                        self.stats.kills.fetch_add(1, Ordering::Relaxed);
+                        *guard = None;
+                        return Err(SimorphError::Component {
+                            component: name,
+                            message: format!(
+                                "output exceeded {} bytes",
+                                self.policy.max_output_bytes
+                            ),
+                        });
+                    }
                     if l.trim().is_empty() {
                         continue;
                     }

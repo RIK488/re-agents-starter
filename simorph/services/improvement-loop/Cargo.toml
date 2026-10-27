@@ -1,0 +1,21 @@
+[package]
+name = "simorph-svc-improvement-loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Closed-loop, demonstrated improvement of an AI system (neural surrogate) from SIMORPH's own validated simulations: sealed evaluation, limit identification, targeted experiments, independent validation, controlled training, statistical acceptance, rollback."
+
+[dependencies]
+simorph-core = { path = "../../crates/simorph-core" }
+simorph-learning = { path = "../../crates/simorph-learning" }
+simorph-experiment = { path = "../../crates/simorph-experiment" }
+simorph-validation = { path = "../../crates/simorph-validation" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+simorph-simulation = { path = "../../crates/simorph-simulation" }
+simorph-plugin-engineering = { path = "../../plugins/engineering" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+chrono.workspace = true

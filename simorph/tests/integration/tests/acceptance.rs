@@ -40,20 +40,20 @@ fn ac_e2e_1_nanosat_campaign() {
     );
     assert_eq!(ecl.level, EvidenceLevel::Simulated);
     assert!(!ecl.validations.is_empty() && !ecl.supporting_runs.is_empty());
-    // the retained design respects the hard constraints (problem units)
-    let best = c
-        .conclusions
-        .iter()
-        .find(|k| k.variable == "final_soc")
-        .unwrap();
-    let run = c
-        .outcomes
-        .iter()
-        .flat_map(|o| o.runs.iter())
-        .find(|r| r.run_id == best.supporting_runs[0])
-        .unwrap();
-    assert!(run.outputs["array_mass"] <= 0.35 + 1e-9);
-    assert!(run.outputs["energy_balance_error"].abs() <= 0.05);
+    // The retained design is the lightest feasible power subsystem: it
+    // respects every hard constraint and is not saturated (DoD active or
+    // energy margin active, i.e. the optimum sits on a constraint).
+    let best = c.conclusions.iter().find(|k| k.variable == "power_system_mass").unwrap();
+    let run = c.outcomes.iter().flat_map(|o| o.runs.iter()).find(|r| r.run_id == best.supporting_runs[0]).unwrap();
+    assert!(run.outputs["energy_margin_wh"] >= 0.0, "{:?}", run.outputs);
+    assert!(run.outputs["depth_of_discharge"] <= 0.3 + 1e-9, "{:?}", run.outputs);
+    assert!(run.outputs["energy_balance_abs_error"] <= 0.05);
+    assert!(run.outputs["final_soc"] < 0.999, "objective must not be saturated: {:?}", run.outputs);
+    // Every unknown is read on the retained design.
+    for u in ["eclipse_fraction", "min_soc", "max_array_temperature"] {
+        let k = c.conclusions.iter().find(|k| k.variable == u).unwrap();
+        assert_eq!(k.supporting_runs, best.supporting_runs, "{u} must come from the retained design");
+    }
     // provenance complete and intact; validations recorded; report exported
     w.ledger.verify_chain().unwrap();
     assert!(w.ledger.by_kind(ProvenanceKind::Validation).len() >= c.runs_used as usize);
@@ -64,7 +64,7 @@ fn ac_e2e_1_nanosat_campaign() {
         .join("report.md")
         .exists());
     // memory ingested
-    assert!(memory_report(&w).unwrap().contains("final_soc"));
+    assert!(memory_report(&w).unwrap().contains("power_system_mass"));
 }
 
 /// Cross-sector: the same director handles civil engineering, hydraulics and finance.

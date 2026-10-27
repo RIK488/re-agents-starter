@@ -201,7 +201,7 @@ impl HumanApproval {
             return Err(SimorphError::PermissionDenied("approval expired".into()));
         }
         let payload = Self::payload(&self.approver, &self.subject, &self.scope, &self.expires_at);
-        if sign(&payload, signing_secret) != self.signature {
+        if !mac_eq(&sign(&payload, signing_secret), &self.signature) {
             return Err(SimorphError::PermissionDenied(
                 "approval signature invalid".into(),
             ));
@@ -210,12 +210,24 @@ impl HumanApproval {
     }
 }
 
-fn sign(payload: &str, secret: &[u8]) -> String {
-    let mut bytes = Vec::with_capacity(secret.len() + payload.len() + 1);
-    bytes.extend_from_slice(secret);
-    bytes.push(0);
-    bytes.extend_from_slice(payload.as_bytes());
-    simorph_core::hashing::sha256_hex(&bytes)
+/// HMAC-SHA256 (RFC 2104) of the payload under the server-side secret.
+/// A keyed MAC is required: a bare `sha256(secret || payload)` is open to
+/// length-extension forgeries.
+pub(crate) fn sign(payload: &str, secret: &[u8]) -> String {
+    use hmac::{Hmac, Mac};
+    let mut mac =
+        Hmac::<sha2::Sha256>::new_from_slice(secret).expect("HMAC accepts any key length");
+    mac.update(payload.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Constant-time comparison of hex MACs.
+pub(crate) fn mac_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 /// Result of a successful authorisation.
@@ -315,6 +327,15 @@ mod tests {
 
     fn policy() -> Policy {
         Policy::new(b"test-secret".to_vec(), AuditLog::in_memory())
+    }
+
+    #[test]
+    fn signature_is_rfc2104_hmac_sha256() {
+        // RFC 4231 test case 2
+        assert_eq!(
+            super::sign("what do ya want for nothing?", b"Jefe"),
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Actions exposing the model factory, the simulator factory and the
 //! knowledge service.
 
-use crate::registry::{default_component_set, default_registry};
+use crate::registry::{component_set, default_registry};
 use crate::workspace::Workspace;
 use serde::{Deserialize, Serialize};
 use simorph_core::*;
@@ -149,11 +149,8 @@ pub fn generate_simulator(
             domains: req.domains.clone(),
         });
     }
-    let factory = sf::SimulatorFactory::new(
-        default_registry()?,
-        default_component_set()?,
-        ws.ledger.clone(),
-    );
+    let factory =
+        sf::SimulatorFactory::new(default_registry()?, component_set()?, ws.ledger.clone());
     let report = factory.run(&r, ctl)?;
     let markdown = report.markdown();
     let dir = ws.root.join("simulators");

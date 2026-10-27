@@ -395,6 +395,31 @@ pub fn analyse(problem: &ProblemSpec, catalog: &dyn ComponentCatalog) -> Result<
 
     candidates.sort_by(|a, b| a.name.cmp(&b.name));
     candidates.dedup_by(|a, b| a.component == b.component);
+    // Design variables a candidate does not read are reported: optimising
+    // them with that component would answer a different question.
+    if !problem.design_variables.is_empty() {
+        for c in &candidates {
+            let ignored: Vec<String> = problem
+                .design_variables
+                .iter()
+                .filter(|d| !c.requires.contains(&d.name))
+                .map(|d| d.name.clone())
+                .collect();
+            if ignored.len() == problem.design_variables.len() {
+                dimensional_issues.push(format!(
+                    "{} n'utilise aucune variable de conception ({}) : il ne peut pas servir à l'optimisation de ce problème",
+                    c.name,
+                    ignored.join(", ")
+                ));
+            } else if !ignored.is_empty() {
+                dimensional_issues.push(format!(
+                    "{} ignore les variables de conception {}",
+                    c.name,
+                    ignored.join(", ")
+                ));
+            }
+        }
+    }
 
     Ok(ProblemAnalysis {
         problem_id: problem.id,

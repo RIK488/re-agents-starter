@@ -9,6 +9,7 @@ description = "SIMORPH HTTP API and web interface. Every route maps to an action
 simorph-core = { path = "../../crates/simorph-core" }
 simorph-units = { path = "../../crates/simorph-units" }
 simorph-telemetry = { path = "../../crates/simorph-telemetry" }
+simorph-security = { path = "../../crates/simorph-security" }
 simorph-provenance = { path = "../../crates/simorph-provenance" }
 simorph-svc-scientific-director = { path = "../../services/scientific-director" }
 simorph-cli = { path = "../cli" }

@@ -256,3 +256,112 @@ async fn api_key_is_enforced_when_configured() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Every action advertised by the registry is routed (no axum 404/405):
+/// replaces the former comparison of two hand-written lists.
+#[tokio::test]
+async fn every_advertised_http_action_is_routed() {
+    let (app, dir) = app();
+    for a in simorph_cli::ACTIONS {
+        let (method, path) = a.http.split_once(' ').unwrap();
+        let path = path
+            .split('?')
+            .next()
+            .unwrap()
+            .replace("{name}", "x")
+            .replace("{id}", "00000000-0000-0000-0000-000000000000");
+        let req = Request::builder()
+            .method(method)
+            .uri(&path)
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        // An unrouted path gives an empty 404 or a 405; a routed one answers
+        // with JSON (possibly an application error such as 400/404/422).
+        assert_ne!(
+            status,
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{} {}",
+            method,
+            path
+        );
+        assert!(
+            !(status == StatusCode::NOT_FOUND && bytes.is_empty()),
+            "action {} not routed: {} {}",
+            a.id,
+            method,
+            path
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn viewer_keys_are_read_only_and_cors_is_closed_by_default() {
+    let dir =
+        std::env::temp_dir().join(format!("simorph-web-roles-{}", simorph_core::RunId::new()));
+    let mut st = AppState::open(dir.to_str().unwrap()).unwrap();
+    st.api_keys = vec![
+        ("view".into(), simorph_security::Role::Viewer),
+        ("res".into(), simorph_security::Role::Researcher),
+    ];
+    let app = build_app(Arc::new(st));
+    let send = |key: &str, method: &str, uri: &str, body: Option<Value>| {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("x-api-key", key)
+            .body(
+                body.map(|b| Body::from(b.to_string()))
+                    .unwrap_or(Body::empty()),
+            )
+            .unwrap()
+    };
+    let run = json!({"component": "operations.queue.mm1", "inputs": {"arrival_rate": 1.0, "service_rate": 2.0}});
+    assert_eq!(
+        app.clone()
+            .oneshot(send("view", "GET", "/api/components", None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(send("view", "POST", "/api/runs", Some(run.clone())))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(send("res", "POST", "/api/runs", Some(run)))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(send("bad", "GET", "/api/components", None))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    // A cross-origin request gets no Access-Control-Allow-Origin header.
+    let req = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .header("origin", "https://evil.example")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert!(resp.headers().get("access-control-allow-origin").is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}

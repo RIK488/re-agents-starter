@@ -18,12 +18,16 @@ pub fn example(name: &str) -> Option<ProblemSpec> {
     })
 }
 
-/// Nanosatellite power subsystem sizing: maximise the minimum state of
-/// charge over one orbit with a mass cap on the solar array.
+/// Nanosatellite power subsystem sizing: minimise the mass of the power
+/// subsystem (array + battery) such that the battery gains energy over an
+/// orbit (energy-positive) and its depth of discharge stays ≤ 30 % (cycle
+/// life).  This formulation is not saturated: a larger array raises the
+/// margin but costs mass, a larger battery lowers the depth of discharge but
+/// costs mass.
 pub fn nanosat() -> ProblemSpec {
     let mut p = ProblemSpec::new(
         "Dimensionnement énergétique d'un nanosatellite",
-        "Choisir la surface de panneau solaire et la capacité batterie pour garantir le bilan d'énergie d'un nanosatellite 3U en orbite basse, sous contrainte de masse.",
+        "Choisir la surface de panneau solaire et la capacité batterie qui minimisent la masse du sous-système énergie d'un nanosatellite en orbite basse à 500 km, avec un bilan d'énergie positif sur l'orbite et une profondeur de décharge d'au plus 30 %.",
     );
     p.domains = vec!["aerospace".into(), "power".into(), "thermal".into()];
     p.knowns
@@ -38,44 +42,53 @@ pub fn nanosat() -> ProblemSpec {
             high: 16.0,
         }),
     );
-    p.knowns.push(Quantity::new("soc0", 0.3, "1"));
-    p.knowns.push(Quantity::new("orbits", 1.0, "1"));
+    p.knowns.push(Quantity::new("soc0", 0.6, "1"));
+    p.knowns.push(Quantity::new("orbits", 2.0, "1"));
     p.design_variables.push(DesignVariable {
         name: "array_area".into(),
         unit: "cm^2".into(),
         low: 300.0,
-        high: 1200.0,
+        high: 1500.0,
         integer: false,
         initial: None,
     });
     p.design_variables.push(DesignVariable {
         name: "battery_capacity_ah".into(),
         unit: "Ah".into(),
-        low: 2.0,
-        high: 10.0,
+        low: 1.0,
+        high: 12.0,
         integer: false,
         initial: None,
     });
     p.objectives.push(Objective {
-        name: "état de charge final maximal".into(),
-        direction: Direction::Maximize,
-        variable: "final_soc".into(),
-        unit: "1".into(),
+        name: "masse minimale du sous-système énergie".into(),
+        direction: Direction::Minimize,
+        variable: "power_system_mass".into(),
+        unit: "kg".into(),
         target: None,
         weight: 1.0,
     });
     p.constraints.push(Constraint {
-        name: "masse panneau".into(),
-        variable: "array_mass".into(),
-        kind: ConstraintKind::UpperBound,
-        bound: 0.35,
-        unit: "kg".into(),
+        name: "bilan d'énergie positif".into(),
+        variable: "energy_margin_wh".into(),
+        kind: ConstraintKind::LowerBound,
+        bound: 0.0,
+        unit: "Wh".into(),
         tolerance: 0.0,
         hard: true,
     });
     p.constraints.push(Constraint {
-        name: "bilan d'énergie fermé".into(),
-        variable: "energy_balance_error".into(),
+        name: "profondeur de décharge".into(),
+        variable: "depth_of_discharge".into(),
+        kind: ConstraintKind::UpperBound,
+        bound: 0.3,
+        unit: "1".into(),
+        tolerance: 0.0,
+        hard: true,
+    });
+    p.constraints.push(Constraint {
+        name: "fermeture du bilan numérique".into(),
+        variable: "energy_balance_abs_error".into(),
         kind: ConstraintKind::UpperBound,
         bound: 0.05,
         unit: "1".into(),
@@ -92,7 +105,13 @@ pub fn nanosat() -> ProblemSpec {
         name: "min_soc".into(),
         unit: "1".into(),
         prior: None,
-        description: Some("état de charge minimal sur l'orbite".into()),
+        description: Some("état de charge minimal".into()),
+    });
+    p.unknowns.push(Unknown {
+        name: "max_array_temperature".into(),
+        unit: "K".into(),
+        prior: None,
+        description: Some("température maximale du panneau".into()),
     });
     p.budget.max_runs = 400;
     p

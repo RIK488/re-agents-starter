@@ -15,7 +15,11 @@
 //! ```
 //!
 //! Functions: `abs, sqrt, exp, ln, log10, sin, cos, tan, min, max, floor,
-//! ceil, round, sign`.  Constants: `pi, e, inf, nan, true, false`.
+//! ceil, round, sign` (NaN in any argument gives NaN).  Constants: `pi, e,
+//! inf, nan` — a *user variable with the same name takes precedence* (e.g. a
+//! restitution coefficient `e`) — and the keywords `true, false`.
+//! Comparisons involving NaN are false.  Nesting is limited to
+//! [`MAX_DEPTH`] levels (error instead of stack overflow).
 
 use indexmap::IndexMap;
 use simorph_core::{Result, SimorphError};
@@ -132,13 +136,26 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
     Ok(out)
 }
 
+/// Maximum nesting depth (parentheses, unary operators, powers).
+pub const MAX_DEPTH: usize = 256;
+
 struct P<'a> {
     t: Vec<Tok>,
     i: usize,
     vars: &'a IndexMap<String, f64>,
+    depth: usize,
 }
 
 impl<'a> P<'a> {
+    fn enter(&mut self) -> Result<()> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(SimorphError::InvalidInput(format!(
+                "expression nested deeper than {MAX_DEPTH} levels"
+            )));
+        }
+        Ok(())
+    }
     fn peek(&self) -> Option<&Tok> {
         self.t.get(self.i)
     }
@@ -219,6 +236,12 @@ impl<'a> P<'a> {
         }
     }
     fn unary(&mut self) -> Result<Value> {
+        self.enter()?;
+        let r = self.unary_inner();
+        self.depth -= 1;
+        r
+    }
+    fn unary_inner(&mut self) -> Result<Value> {
         if self.is_op("-") {
             self.next();
             return Ok(Value::Num(-self.unary()?.as_f64()?));
@@ -242,7 +265,10 @@ impl<'a> P<'a> {
         match self.next() {
             Some(Tok::Num(x)) => Ok(Value::Num(x)),
             Some(Tok::LParen) => {
-                let v = self.or()?;
+                self.enter()?;
+                let v = self.or();
+                self.depth -= 1;
+                let v = v?;
                 match self.next() {
                     Some(Tok::RParen) => Ok(v),
                     _ => Err(SimorphError::InvalidInput("expected `)`".into())),
@@ -269,6 +295,11 @@ impl<'a> P<'a> {
                         self.next();
                     }
                     return call(&name, &args);
+                }
+                if !matches!(name.as_str(), "true" | "false") {
+                    if let Some(v) = self.vars.get(&name) {
+                        return Ok(Value::Num(*v));
+                    }
                 }
                 match name.as_str() {
                     "pi" => Ok(Value::Num(std::f64::consts::PI)),
@@ -315,11 +346,17 @@ fn call(name: &str, a: &[f64]) -> Result<Value> {
             if a.is_empty() {
                 return Err(SimorphError::InvalidInput("`min` needs arguments".into()));
             }
+            if a.iter().any(|x| x.is_nan()) {
+                return Ok(Value::Num(f64::NAN));
+            }
             Ok(Value::Num(a.iter().cloned().fold(f64::INFINITY, f64::min)))
         }
         "max" => {
             if a.is_empty() {
                 return Err(SimorphError::InvalidInput("`max` needs arguments".into()));
+            }
+            if a.iter().any(|x| x.is_nan()) {
+                return Ok(Value::Num(f64::NAN));
             }
             Ok(Value::Num(
                 a.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
@@ -329,13 +366,37 @@ fn call(name: &str, a: &[f64]) -> Result<Value> {
     }
 }
 
+/// Variable names an expression reads (identifiers that are not function
+/// names, logical keywords or — unless shadowed — built-in constants).
+pub fn referenced_variables(expr: &str) -> Result<Vec<String>> {
+    let t = tokenize(expr)?;
+    let mut out: Vec<String> = vec![];
+    for (i, tok) in t.iter().enumerate() {
+        if let Tok::Ident(n) = tok {
+            let is_call = matches!(t.get(i + 1), Some(Tok::LParen));
+            if is_call || matches!(n.as_str(), "and" | "or" | "not" | "true" | "false") {
+                continue;
+            }
+            if !out.contains(n) {
+                out.push(n.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Evaluate an expression with the given variables.
 pub fn evaluate(expr: &str, vars: &IndexMap<String, f64>) -> Result<Value> {
     let t = tokenize(expr)?;
     if t.is_empty() {
         return Err(SimorphError::InvalidInput("empty expression".into()));
     }
-    let mut p = P { t, i: 0, vars };
+    let mut p = P {
+        t,
+        i: 0,
+        vars,
+        depth: 0,
+    };
     let v = p.or()?;
     if p.i != p.t.len() {
         return Err(SimorphError::InvalidInput(format!(
@@ -404,5 +465,57 @@ mod tests {
         assert!(evaluate("foo(1)", &v).is_err());
         assert!(evaluate("1 = 2", &v).is_err());
         assert!(evaluate("", &v).is_err());
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn vars(kv: &[(&str, f64)]) -> IndexMap<String, f64> {
+        kv.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn user_variables_shadow_constants() {
+        // Audit probe: with e = 0.8, `e < 1` evaluated to false (Euler's e).
+        assert_eq!(
+            evaluate("e < 1", &vars(&[("e", 0.8)])).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            evaluate("pi == 3", &vars(&[("pi", 3.0)])).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(evaluate("e > 2.7", &vars(&[])).unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn min_max_propagate_nan() {
+        // Audit probe: max(NaN, 0) < 1e-6 was true.
+        assert_eq!(
+            evaluate("max(x, 0) < 1e-6", &vars(&[("x", f64::NAN)])).unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            evaluate("min(x, 0) < 1e-6", &vars(&[("x", f64::NAN)])).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn deep_nesting_is_an_error_not_a_crash() {
+        let deep = format!("{}1{}", "(".repeat(20_000), ")".repeat(20_000));
+        assert!(evaluate(&deep, &vars(&[])).is_err());
+        let minus = format!("{}1", "-".repeat(20_000));
+        assert!(evaluate(&minus, &vars(&[])).is_err());
+        let ok = format!("{}1{}", "(".repeat(50), ")".repeat(50));
+        assert_eq!(evaluate(&ok, &vars(&[])).unwrap(), Value::Num(1.0));
+    }
+
+    #[test]
+    fn referenced_variables_lists_reads() {
+        let r = referenced_variables("abs(x) < tol and y.max <= 3 or pi > 1").unwrap();
+        assert_eq!(r, vec!["x", "tol", "y.max", "pi"]);
     }
 }

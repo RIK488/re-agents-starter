@@ -23,7 +23,7 @@ pub mod protected;
 pub mod record;
 
 pub use checks::*;
-pub use classify::{classify, ProofArtifact, Prover, ReferenceOrigin};
+pub use classify::{classify, classify_with_origins, ProofArtifact, Prover, ReferenceOrigin};
 pub use expr::{evaluate, Value};
 pub use protected::ProtectedReferences;
 pub use record::{CheckResult, ValidationRecord, ValidationTarget};

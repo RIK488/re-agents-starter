@@ -1,0 +1,19 @@
+[package]
+name = "simorph-adapter-scientific-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Mature open-source scientific engines (SciPy, SymPy, MuJoCo, Gymnasium, PyTorch) exposed as sandboxed SIMORPH components."
+
+[dependencies]
+simorph-core = { path = "../../crates/simorph-core" }
+simorph-security = { path = "../../crates/simorph-security" }
+simorph-adapter-python-bridge = { path = "../python-bridge" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+simorph-simulation = { path = "../../crates/simorph-simulation" }
+simorph-optimization = { path = "../../crates/simorph-optimization" }
+simorph-uncertainty = { path = "../../crates/simorph-uncertainty" }
+indexmap.workspace = true

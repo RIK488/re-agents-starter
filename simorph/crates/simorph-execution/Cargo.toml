@@ -16,3 +16,4 @@ tracing.workspace = true
 parking_lot.workspace = true
 uuid.workspace = true
 indexmap.workspace = true
+libc.workspace = true

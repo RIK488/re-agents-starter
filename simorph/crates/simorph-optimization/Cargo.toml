@@ -8,6 +8,7 @@ description = "Optimisation methods and method selection for SIMORPH."
 [dependencies]
 simorph-core = { path = "../simorph-core" }
 simorph-uncertainty = { path = "../simorph-uncertainty" }
+simorph-units = { path = "../simorph-units" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

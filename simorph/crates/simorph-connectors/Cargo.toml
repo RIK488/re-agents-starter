@@ -1,0 +1,19 @@
+[package]
+name = "simorph-connectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH connectors to real data and instruments: CSV / JSON-lines / HTTP-JSON data sources with unit-checked schemas and provenance; instrument trait with authorisation-gated setpoints, replay and SCPI-like line instruments."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-units = { path = "../simorph-units" }
+simorph-security = { path = "../simorph-security" }
+simorph-provenance = { path = "../simorph-provenance" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+chrono.workspace = true
+csv = "1"
+ureq = { version = "2", features = ["native-certs"] }
+url = "2"

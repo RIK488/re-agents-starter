@@ -35,6 +35,12 @@ simorph-plugin-physics = { path = "../../plugins/physics" }
 simorph-plugin-engineering = { path = "../../plugins/engineering" }
 simorph-plugin-ai = { path = "../../plugins/ai" }
 simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+simorph-adapter-scientific-python = { path = "../../adapters/scientific-python" }
+simorph-formal = { path = "../../crates/simorph-formal" }
+simorph-svc-improvement-loop = { path = "../../services/improvement-loop" }
+simorph-multimodal = { path = "../../crates/simorph-multimodal" }
+simorph-evolution = { path = "../../crates/simorph-evolution" }
+simorph-distributed = { path = "../../crates/simorph-distributed" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

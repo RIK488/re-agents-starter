@@ -49,12 +49,61 @@ pub struct AppState {
     pub workspace: Workspace,
     pub jobs: Mutex<HashMap<String, Job>>,
     pub metrics: Metrics,
+    /// Legacy single key (`SIMORPH_API_KEY`), mapped to the Researcher role.
     pub api_key: Option<String>,
+    /// Keys with roles (`SIMORPH_API_KEYS="key1:researcher,key2:viewer"`).
+    pub api_keys: Vec<(String, simorph_security::Role)>,
+    /// Origins allowed by CORS (`SIMORPH_CORS_ORIGINS`); empty = same-origin only.
+    pub cors_origins: Vec<String>,
+}
+
+/// Maximum number of finished jobs kept in memory (oldest evicted first).
+pub const MAX_FINISHED_JOBS: usize = 200;
+
+fn parse_role(s: &str) -> Option<simorph_security::Role> {
+    use simorph_security::Role::*;
+    Some(match s.trim().to_lowercase().as_str() {
+        "admin" => Admin,
+        "researcher" => Researcher,
+        "operator" => Operator,
+        "viewer" => Viewer,
+        "agent" => Agent,
+        _ => return None,
+    })
+}
+
+fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len()
+        && a.bytes()
+            .zip(b.bytes())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+            == 0
 }
 
 impl AppState {
     pub fn open(data: &str) -> Result<Self> {
+        let api_keys = std::env::var("SIMORPH_API_KEYS")
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .filter_map(|kv| kv.split_once(':'))
+                    .filter_map(|(k, r)| parse_role(r).map(|role| (k.trim().to_string(), role)))
+                    .filter(|(k, _)| !k.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let cors_origins = std::env::var("SIMORPH_CORS_ORIGINS")
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(Self {
+            api_keys,
+            cors_origins,
             workspace: Workspace::open(data)?,
             jobs: Mutex::new(HashMap::new()),
             metrics: Metrics::new(),
@@ -94,21 +143,52 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = std::result::Result<Json<T>, ApiError>;
 
-fn check_key(state: &AppState, headers: &HeaderMap) -> std::result::Result<(), ApiError> {
+/// Resolve the caller's role.  Without any configured key the server runs in
+/// local mode (intended for a loopback bind) and every caller is a Researcher.
+fn caller_role(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> std::result::Result<simorph_security::Role, ApiError> {
+    if state.api_key.is_none() && state.api_keys.is_empty() {
+        return Ok(simorph_security::Role::Researcher);
+    }
+    let given = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
     if let Some(k) = &state.api_key {
-        let ok = headers
-            .get("x-api-key")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v == k)
-            .unwrap_or(false);
-        if !ok {
-            return Err(ApiError(
-                StatusCode::UNAUTHORIZED,
-                "clé API invalide".into(),
-            ));
+        if ct_eq(given, k) {
+            return Ok(simorph_security::Role::Researcher);
         }
     }
-    Ok(())
+    for (k, role) in &state.api_keys {
+        if ct_eq(given, k) {
+            return Ok(*role);
+        }
+    }
+    Err(ApiError(
+        StatusCode::UNAUTHORIZED,
+        "clé API invalide".into(),
+    ))
+}
+
+/// Read access: any authenticated role.
+fn check_key(state: &AppState, headers: &HeaderMap) -> std::result::Result<(), ApiError> {
+    caller_role(state, headers).map(|_| ())
+}
+
+/// Actions that execute components, generated code or long jobs require a
+/// role holding `SpawnProcess` (Admin, Researcher, Operator); Viewer and
+/// Agent keys are read-only on the HTTP API.
+fn check_write(state: &AppState, headers: &HeaderMap) -> std::result::Result<(), ApiError> {
+    use simorph_security::Role::*;
+    match caller_role(state, headers)? {
+        Admin | Researcher | Operator => Ok(()),
+        r => Err(ApiError(
+            StatusCode::FORBIDDEN,
+            format!("le rôle {r:?} ne permet pas d'exécuter des calculs"),
+        )),
+    }
 }
 
 async fn blocking<T: Send + 'static>(
@@ -287,6 +367,21 @@ fn start_job(
 ) -> String {
     let id = RunId::new().to_string();
     let control = ExecutionControl::default();
+    {
+        // Bound memory: evict the oldest finished jobs beyond the limit.
+        let mut jobs = state.jobs.lock();
+        let mut finished: Vec<(chrono::DateTime<chrono::Utc>, String)> = jobs
+            .values()
+            .filter(|j| j.status != JobStatus::Running)
+            .map(|j| (j.started_at, j.id.clone()))
+            .collect();
+        if finished.len() >= MAX_FINISHED_JOBS {
+            finished.sort();
+            for (_, old) in finished.iter().take(finished.len() + 1 - MAX_FINISHED_JOBS) {
+                jobs.remove(old);
+            }
+        }
+    }
     state.jobs.lock().insert(
         id.clone(),
         Job {
@@ -334,7 +429,7 @@ async fn campaign_start(
     headers: HeaderMap,
     Json(p): Json<ProblemSpec>,
 ) -> ApiResult<serde_json::Value> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     p.validate_structure()?;
     let id = start_job(&s, "campaign", move |ws, ctl| {
         let c = run_campaign(ws, p, ctl)?;
@@ -437,7 +532,7 @@ async fn job_cancel(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let jobs = s.jobs.lock();
     let j = jobs
         .get(&id)
@@ -466,7 +561,7 @@ async fn run_route(
     headers: HeaderMap,
     Json(r): Json<RunReq>,
 ) -> ApiResult<RunOutput> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let st = s.clone();
     let out = blocking(move || {
         execute_component(
@@ -500,7 +595,7 @@ async fn experiment_reproduce(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult<ReproduceOutput> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let st = s.clone();
     Ok(Json(
         blocking(move || reproduce_experiment(&st.workspace, &id, &ExecutionControl::default()))
@@ -535,7 +630,7 @@ async fn sobol_route(
     headers: HeaderMap,
     Json(r): Json<SobolReq>,
 ) -> ApiResult<SobolOutput> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     Ok(Json(
         blocking(move || {
             sobol(
@@ -571,7 +666,7 @@ async fn lab_run(
     headers: HeaderMap,
     Json(r): Json<LabReq>,
 ) -> ApiResult<serde_json::Value> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let id = start_job(&s, "lab", move |ws, ctl| {
         let out = lab::run_lab(Some(ws), &r.suite, r.iterations.min(20), ctl)?;
         let report = out.report_markdown.clone();
@@ -630,9 +725,18 @@ async fn schemas_route(
     headers: HeaderMap,
 ) -> ApiResult<serde_json::Value> {
     check_key(&s, &headers)?;
-    let dir = s.workspace.root.join("schemas");
+    // Generated into a private temporary directory, read back, then removed:
+    // a GET has no lasting side effect.
+    let dir = std::env::temp_dir().join(format!("simorph-schemas-{}", RunId::new()));
     std::fs::create_dir_all(&dir).map_err(SimorphError::from)?;
-    let files = export_schemas(&dir)?;
+    let files = export_schemas(&dir);
+    let files = match files {
+        Ok(f) => f,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(e.into());
+        }
+    };
     let mut out = serde_json::Map::new();
     for f in files {
         let name = f.file_name().unwrap().to_string_lossy().to_string();
@@ -641,11 +745,12 @@ async fn schemas_route(
                 .map_err(SimorphError::from)?;
         out.insert(name, v);
     }
+    let _ = std::fs::remove_dir_all(&dir);
     Ok(Json(serde_json::Value::Object(out)))
 }
 
 async fn bench_route(State(s): State<Shared>, headers: HeaderMap) -> ApiResult<serde_json::Value> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let id = start_job(&s, "bench", move |_ws, ctl| {
         let r = bench::run(ctl)?;
         let md = bench::to_markdown(&r);
@@ -683,7 +788,7 @@ async fn model_equations_route(
     headers: HeaderMap,
     Json(r): Json<EquationsRequest>,
 ) -> ApiResult<EquationsOutput> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     Ok(Json(
         blocking(move || model_from_equations(&r, &ExecutionControl::default())).await?,
     ))
@@ -694,7 +799,7 @@ async fn simulator_generate_route(
     headers: HeaderMap,
     Json(r): Json<GenerateRequest>,
 ) -> ApiResult<serde_json::Value> {
-    check_key(&s, &headers)?;
+    check_write(&s, &headers)?;
     let id = start_job(&s, "simulator", move |ws, ctl| {
         let out = generate_simulator(ws, &r, ctl)?;
         let md = out.markdown.clone();
@@ -730,6 +835,102 @@ async fn knowledge_transfers_route(
     ))
 }
 
+/// CORS: only explicitly configured origins; by default no cross-origin
+/// access at all (the interface is served from the same origin).  This keeps
+/// arbitrary web pages from driving a local server that can run code.
+fn cors_layer(origins: &[String]) -> tower_http::cors::CorsLayer {
+    use axum::http::{HeaderValue, Method};
+    let list: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|o| HeaderValue::from_str(o).ok())
+        .collect();
+    tower_http::cors::CorsLayer::new()
+        .allow_origin(list)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderName::from_static("x-api-key"),
+        ])
+}
+
+async fn capabilities_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    check_key(&s, &headers)?;
+    let engines = blocking(engine_availability).await?;
+    Ok(Json(serde_json::json!({"engines": engines})))
+}
+
+async fn formal_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<FormalRequest>,
+) -> ApiResult<FormalOutput> {
+    check_write(&s, &headers)?;
+    let st = s.clone();
+    Ok(Json(
+        blocking(move || formal_check(Some(&st.workspace), &r)).await?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct ImproveReq {
+    target: String,
+    #[serde(default)]
+    recommended: bool,
+}
+
+async fn improvement_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<ImproveReq>,
+) -> ApiResult<serde_json::Value> {
+    check_write(&s, &headers)?;
+    let id = start_job(&s, "improvement", move |ws, ctl| {
+        let rep = run_improvement(ws, &r.target, r.recommended, ctl)?;
+        Ok((serde_json::from_str(&rep.to_json())?, rep.to_markdown()))
+    });
+    Ok(Json(serde_json::json!({"id": id, "status": "running"})))
+}
+
+#[derive(Deserialize)]
+struct DiscoverReq {
+    /// CSV text with `name [unit]` headers, or empty for the Kepler demonstration.
+    #[serde(default)]
+    csv: String,
+    #[serde(default)]
+    target: String,
+    #[serde(default = "one_seed")]
+    seed: u64,
+    #[serde(default = "default_tol")]
+    tolerance: f64,
+}
+fn default_tol() -> f64 {
+    0.01
+}
+fn one_seed() -> u64 {
+    11
+}
+
+async fn discovery_route(
+    State(s): State<Shared>,
+    headers: HeaderMap,
+    Json(r): Json<DiscoverReq>,
+) -> ApiResult<serde_json::Value> {
+    check_write(&s, &headers)?;
+    let id = start_job(&s, "discovery", move |ws, ctl| {
+        let out = if r.csv.trim().is_empty() {
+            discover_kepler(Some(ws), r.seed, ctl)?
+        } else {
+            discover_csv(Some(ws), &r.csv, &r.target, r.seed, r.tolerance, ctl)?
+        };
+        let md = format!("**{}** : {}\n\n- loi : `{}`\n- erreur hors échantillon : {:?}\n- homogène en dimension : {:?}\n- niveau : {}\n- {} générations, {} évaluations, {:.1} s", out.title, out.statement, out.law.clone().unwrap_or_else(|| "aucune".into()), out.held_out_error, out.dimension_ok, out.claim_level.label_fr(), out.generations, out.evaluations, out.wall_time_s);
+        Ok((serde_json::to_value(&out)?, md))
+    });
+    Ok(Json(serde_json::json!({"id": id, "status": "running"})))
+}
+
 pub fn build_app(state: Shared) -> Router {
     Router::new()
         .route("/", get(index))
@@ -737,6 +938,10 @@ pub fn build_app(state: Shared) -> Router {
         .route("/metrics", get(metrics))
         .route("/api/actions", get(actions))
         .route("/api/components", get(components_list))
+        .route("/api/capabilities", get(capabilities_route))
+        .route("/api/formal/check", post(formal_route))
+        .route("/api/improvement/run", post(improvement_route))
+        .route("/api/discovery", post(discovery_route))
         .route("/api/components/:name", get(component_show))
         .route("/api/units/convert", post(units_convert))
         .route("/api/units/check", post(units_check))
@@ -770,6 +975,6 @@ pub fn build_app(state: Shared) -> Router {
         .route("/api/simulators/generate", post(simulator_generate_route))
         .route("/api/knowledge/memory", get(knowledge_memory_route))
         .route("/api/knowledge/transfers", get(knowledge_transfers_route))
-        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer(cors_layer(&state.cors_origins))
         .with_state(state)
 }

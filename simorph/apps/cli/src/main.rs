@@ -1,6 +1,7 @@
 //! SIMORPH command-line interface.
 
 use clap::{Parser, Subcommand};
+use simorph_cli::cluster::serve_worker;
 use simorph_cli::*;
 use simorph_core::*;
 use std::path::PathBuf;
@@ -116,6 +117,31 @@ enum Cmd {
         #[command(subcommand)]
         cmd: SimulatorCmd,
     },
+    /// Serve the laboratory components to a coordinator (worker process;
+    /// the shared secret is read from SIMORPH_WORKER_SECRET).
+    Worker {
+        #[arg(long)]
+        connect: String,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        slots: Option<usize>,
+    },
+    /// Law discovery (symbolic regression).
+    Discover {
+        #[command(subcommand)]
+        cmd: DiscoverCmd,
+    },
+    /// Closed-loop AI improvement.
+    Improve {
+        #[command(subcommand)]
+        cmd: ImproveCmd,
+    },
+    /// Formal verification (Z3 certificates).
+    Formal {
+        #[command(subcommand)]
+        cmd: FormalCmd,
+    },
     /// Scientific memory and interdisciplinary transfer.
     Knowledge {
         #[command(subcommand)]
@@ -147,6 +173,43 @@ enum SimulatorCmd {
     },
 }
 #[derive(Subcommand)]
+enum DiscoverCmd {
+    /// CSV with `name [unit]` headers.
+    Csv {
+        file: PathBuf,
+        #[arg(long)]
+        target: String,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Relative held-out error accepted (≈ measurement noise).
+        #[arg(long, default_value_t = 0.01)]
+        tolerance: f64,
+    },
+    /// Rediscover Kepler's third law from integrated orbits.
+    Kepler {
+        #[arg(long, default_value_t = 11)]
+        seed: u64,
+    },
+}
+#[derive(Subcommand)]
+enum ImproveCmd {
+    Run {
+        #[arg(long, default_value = "pipe")]
+        target: String,
+        #[arg(long)]
+        recommended: bool,
+    },
+}
+#[derive(Subcommand)]
+enum FormalCmd {
+    /// Prove or refute a bounded statement given as a JSON request.
+    Check {
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+#[derive(Subcommand)]
 enum KnowledgeCmd {
     Memory,
     Transfers {
@@ -157,6 +220,8 @@ enum KnowledgeCmd {
 
 #[derive(Subcommand)]
 enum RegistryCmd {
+    /// External engines availability.
+    Capabilities,
     List {
         #[arg(long)]
         domain: Option<String>,
@@ -190,6 +255,12 @@ enum CampaignCmd {
         file: PathBuf,
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Run on N local worker processes through the distributed coordinator.
+        #[arg(long)]
+        workers: Option<usize>,
+        /// Concurrent tasks per worker.
+        #[arg(long, default_value_t = 2)]
+        slots: usize,
     },
     Show {
         id: String,
@@ -282,6 +353,26 @@ fn real_main() -> Result<()> {
                     );
                 }
             }
+            RegistryCmd::Capabilities => {
+                for e in engine_availability()? {
+                    println!(
+                        "{:<28} {}",
+                        e.engine,
+                        if e.available {
+                            "disponible".to_string()
+                        } else {
+                            format!("indisponible : {}", e.reason.unwrap_or_default())
+                        }
+                    );
+                }
+                for l in simorph_adapter_scientific_python::capability_report() {
+                    println!(
+                        "  {:<10} {}",
+                        l.module,
+                        l.version.unwrap_or_else(|| l.error.unwrap_or_default())
+                    );
+                }
+            }
             RegistryCmd::Show { name } => {
                 println!("{}", serde_json::to_string_pretty(&component(&name)?)?)
             }
@@ -329,9 +420,31 @@ fn real_main() -> Result<()> {
             }
         }
         Cmd::Campaign { cmd } => match cmd {
-            CampaignCmd::Run { file, out } => {
+            CampaignCmd::Run {
+                file,
+                out,
+                workers,
+                slots,
+            } => {
                 let ws = Workspace::open(out.unwrap_or(cli.data))?;
-                let c = run_campaign(&ws, load_problem(&file)?, &ctl)?;
+                let c = match workers {
+                    Some(n) if n > 0 => {
+                        let (c, m) =
+                            run_campaign_distributed(&ws, load_problem(&file)?, n, slots, &ctl)?;
+                        eprintln!(
+                            "cluster : {} tâches, {:.1} tâches/s, reprises {}",
+                            m.completed, m.throughput_tasks_per_s, m.retries
+                        );
+                        for w in &m.workers {
+                            eprintln!(
+                                "  worker {} : {} tâches, utilisation {:.2}",
+                                w.id, w.completed, w.utilisation
+                            );
+                        }
+                        c
+                    }
+                    _ => run_campaign(&ws, load_problem(&file)?, &ctl)?,
+                };
                 println!("{}", c.report_markdown());
                 println!(
                     "rapport : {}",
@@ -529,6 +642,58 @@ fn real_main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&out.report)?)
                 } else {
                     println!("{}", out.markdown)
+                }
+            }
+        },
+        Cmd::Worker { connect, id, slots } => {
+            let exit = serve_worker(&connect, &id, slots)?;
+            eprintln!("worker {id} : {exit:?}");
+        }
+        Cmd::Discover { cmd } => {
+            let ws = Workspace::open(cli.data)?;
+            let out = match cmd {
+                DiscoverCmd::Csv {
+                    file,
+                    target,
+                    seed,
+                    tolerance,
+                } => discover_csv(
+                    Some(&ws),
+                    &std::fs::read_to_string(&file)?,
+                    &target,
+                    seed,
+                    tolerance,
+                    &ctl,
+                )?,
+                DiscoverCmd::Kepler { seed } => discover_kepler(Some(&ws), seed, &ctl)?,
+            };
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        }
+        Cmd::Improve { cmd } => match cmd {
+            ImproveCmd::Run {
+                target,
+                recommended,
+            } => {
+                let ws = Workspace::open(cli.data)?;
+                println!(
+                    "{}",
+                    run_improvement(&ws, &target, recommended, &ctl)?.to_markdown()
+                );
+            }
+        },
+        Cmd::Formal { cmd } => match cmd {
+            FormalCmd::Check { file, json } => {
+                let ws = Workspace::open(cli.data)?;
+                let req: FormalRequest = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+                let out = formal_check(Some(&ws), &req)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&out)?)
+                } else {
+                    println!(
+                        "{}\nniveau accordé : {}",
+                        out.summary,
+                        out.evidence.label_fr()
+                    );
                 }
             }
         },

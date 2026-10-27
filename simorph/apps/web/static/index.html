@@ -34,13 +34,14 @@ pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:
 </style>
 </head>
 <body>
-<header><h1>SIMORPH</h1><small>Laboratoire numérique universel — chaque commande visible est une action implémentée et testée</small><span id="health" class="badge">…</span></header>
+<header><h1>SIMORPH</h1><small>Laboratoire numérique universel — chaque commande visible est une action implémentée et testée</small><span id="health" class="badge">…</span><label style="margin-left:auto;flex-direction:row;align-items:center;gap:6px">Clé API <input id="apikey" type="password" size="18" placeholder="si configurée"></label></header>
 <nav id="nav"></nav>
 <main id="main"></main>
 <script>
 const SPACES=["Projet","Recherche","Modélisation","Simulation","Optimisation","IA","Validation","Journal","Export"];
 const $=s=>document.querySelector(s);
-const api=async(method,url,body)=>{const r=await fetch(url,{method,headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}}if(!r.ok)throw new Error(j.error||t);return j};
+const apiKey=()=>{try{return localStorage.getItem('simorph-api-key')||''}catch{return ''}};
+const api=async(method,url,body)=>{const h={'content-type':'application/json'};const k=($('#apikey')&&$('#apikey').value)||apiKey();if(k)h['x-api-key']=k;const r=await fetch(url,{method,headers:h,body:body?JSON.stringify(body):undefined});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}}if(!r.ok)throw new Error(j.error||t);return j};
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function md(src){ // minimal markdown: headings, tables, lists, bold, code
   const lines=src.split('\n');let out=[],inTable=false;
@@ -74,8 +75,10 @@ sec('Espace Recherche — hypothèses, questions ouvertes, décisions scientifiq
 sec('Espace Modélisation — composants, équations, unités, dépendances',`
 <div class="card"><div class="row"><label>Domaine <input id="fDomain" placeholder="aerospace"></label><label>Capacité <input id="fCap" placeholder="ode"></label><button class="act" id="listComp">Lister les composants</button></div><div id="compOut"></div></div>
 <div class="card"><div class="row"><label>Composant <input id="compName" placeholder="physics.orbit.two_body" size="40"></label><button class="act" id="showComp">Inspecter le manifeste</button></div><div id="manifestOut"></div></div>
+<div class="card"><h3>Moteurs externes</h3><div class="row"><button class="act" id="caps">Disponibilité de SciPy, SymPy, MuJoCo, Gymnasium, PyTorch</button></div><div id="capsOut"></div></div>
 <div class="card"><h3>Chaîne de modèles du problème courant</h3><div class="row"><button class="act" id="assemble">Assembler les modèles (descripteurs, connexions, unités)</button></div><div id="assembleOut"></div></div>
 <div class="card"><h3>Modèle à partir d'équations</h3><div class="row"><label>Nom <input id="eqName" value="decay"></label><label>Équations (une par ligne) <textarea id="eqs" style="min-height:60px;width:360px">d(x)/dt = -k*x</textarea></label><label>Variables (JSON) <input id="eqVars" size="30" value='[{"name":"x","unit":"mol"}]'></label><label>Paramètres (JSON) <input id="eqPars" size="50" value='[{"name":"k","value":0.5,"unit":"1/s"},{"name":"x_0","value":2,"unit":"mol"}]'></label><label>Horizon (s) <input id="eqH" value="5"></label><button class="act" id="eqBtn">Construire et simuler</button></div><div id="plotEq" style="min-height:260px"></div><div id="eqOut"></div></div>
+<div class="card"><h3>Découverte de lois (régression symbolique dimensionnelle)</h3><div class="row"><label>Données CSV (en-têtes « nom [unité] » ; vide = démonstration Kepler sur orbites intégrées) <textarea id="discCsv" style="min-height:80px;width:520px"></textarea></label><label>Colonne cible <input id="discTarget" placeholder="T"></label><button class="act" id="discBtn">Découvrir</button><span id="discStatus" class="badge">—</span></div><div id="discOut"></div></div>
 <div class="card"><h3>Unités</h3><div class="row"><label>Valeur <input id="uv" value="1"></label><label>De <input id="uf" value="au"></label><label>Vers <input id="ut" value="km"></label><button class="act" id="convert">Convertir</button><label>Expression A <input id="ua" value="W"></label><label>Expression B <input id="ub" value="V*A"></label><button class="act" id="checkDim">Vérifier la dimension</button></div><div id="unitsOut"></div></div>`);
 // ---------------- Simulation
 sec('Espace Simulation — paramètres, exécutions, résultats, visualisation',`
@@ -90,10 +93,12 @@ sec('Espace Optimisation — méthodes, compromis, sensibilité',`
 <div class="card"><h3>Sensibilité globale (indices de Sobol)</h3><div class="row"><label>Composant <input id="sobComp" value="engineering.beam.cantilever" size="36"></label><label>Entrées nominales (JSON) <input id="sobInputs" size="50" value='{"length":2,"load":1000,"youngs_modulus":2.1e11,"second_moment":8.33e-6}'></label><label>Écarts-types (JSON) <input id="sobVary" size="40" value='{"length":0.1,"load":100,"second_moment":5e-7}'></label><label>Sortie <input id="sobOut" value="tip_deflection"></label><label>N <input id="sobN" value="512"></label><button class="act" id="sobBtn">Calculer</button></div><div id="plot3"></div><div id="sobRes"></div></div>`);
 // ---------------- IA
 sec('Espace IA — modèles, suites scellées, boucle d\'amélioration',`
+<div class="card"><h3>Amélioration en boucle fermée d'un modèle d'IA</h3><div class="row"><label>Cible <select id="impTarget"><option value="pipe">surrogate hydraulique</option><option value="pendulum">surrogate pendule non linéaire</option></select></label><label><input type="checkbox" id="impRec"> stratégie adaptative</label><button class="act" id="impRun">Lancer</button><span id="impStatus" class="badge">—</span></div><div id="impOut"></div></div>
 <div class="card"><div class="row"><button class="act" id="suites">Lister les suites scellées</button><label>Suite <select id="suiteSel"><option>classifier</option><option>reasoner</option><option>bandit</option></select></label><label>Itérations <input id="labIt" value="2"></label><button class="act" id="labRun">Lancer la boucle d'amélioration</button><span id="labStatus" class="badge">—</span></div><div id="plot4"></div><div id="labOut"></div></div>`);
 // ---------------- Validation
 sec('Espace Validation — tests, reproduction, bancs',`
 <div class="card"><div class="row"><button class="act" id="expList">Lister les expériences archivées</button><label>Identifiant <input id="expId" size="40"></label><button class="act" id="reproduce">Reproduire et comparer les hachages</button></div><div id="expOut"></div></div>
+<div class="card"><h3>Vérification formelle (Z3, certificat re-vérifié)</h3><div class="row"><label>Requête (JSON) <textarea id="formalReq" style="min-height:110px;width:640px">{"name":"flèche admissible","statement":"δ = P L³/(3 E I) ≤ 20 mm sur toute la plage","variables":[{"name":"P","low":0,"high":1000},{"name":"L","low":1,"high":2},{"name":"E","low":2e11,"high":2.2e11},{"name":"I","low":1e-5,"high":2e-5}],"goals":["P*L^3/(3*E*I) <= 0.02"],"mode":"prove"}</textarea></label><button class="act" id="formalBtn">Prouver / réfuter</button></div><div id="formalOut"></div></div>
 <div class="card"><div class="row"><button class="act" id="bench">Exécuter les bancs de référence</button><span id="benchStatus" class="badge">—</span></div><div id="benchOut"></div></div>`);
 // ---------------- Journal
 sec('Espace Journal — provenance et preuves',`
@@ -102,6 +107,8 @@ sec('Espace Journal — provenance et preuves',`
 sec('Espace Export — schémas, rapports, résultats',`
 <div class="card"><div class="row"><button class="act" id="schemas">Exporter les schémas JSON</button><button class="act" id="dlReport">Télécharger le rapport de la dernière campagne</button><button class="act" id="dlProblem">Télécharger le problème courant</button></div><div id="exportOut"></div></div>`);
 nav();show(0);
+try{$('#apikey').value=apiKey()}catch{}
+$('#apikey').addEventListener('change',e=>{try{localStorage.setItem('simorph-api-key',e.target.value)}catch{}});
 // ---------------- wiring
 (async()=>{try{const h=await api('GET','/health');$('#health').textContent='serveur OK';const ex=await api('GET','/api/problems/examples');ex.forEach(n=>{const o=document.createElement('option');o.textContent=n;$('#ex').appendChild(o)});const p=await api('GET','/api/problems/examples/nanosat');$('#problem').value=JSON.stringify(p,null,2);
  const acts=await api('GET','/api/actions');$('#actions').innerHTML='<table class="md"><tr><th>Espace</th><th>Action</th><th>CLI</th><th>HTTP</th></tr>'+acts.map(a=>`<tr><td>${esc(a.space)}</td><td>${esc(a.label_fr)}</td><td><code>${esc(a.cli)}</code></td><td><code>${esc(a.http)}</code></td></tr>`).join('')+'</table>';}catch(e){$('#health').textContent='serveur injoignable'}})();
@@ -127,6 +134,10 @@ $('#eqBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/m
 $('#simGen').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/simulators/generate',JSON.parse($('#simReq').value));pollJob(r.id,'#simStatus',j=>out('#simOut',j.error?('Erreur : '+j.error):j.report_markdown,!j.error))},'#simOut');
 $('#memory').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/knowledge/memory');out('#memOut',r.markdown,true)},'#memOut');
 $('#transfers').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/knowledge/transfers?domain='+encodeURIComponent($('#trfDomain').value));out('#memOut',r.length?r:'Aucun transfert suggéré : la mémoire ne contient pas encore de méthode appliquée à un concept analogue dans un autre domaine.')},'#memOut');
+$('#formalBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/formal/check',JSON.parse($('#formalReq').value));out('#formalOut','**'+r.summary+'**\n\nNiveau accordé : '+r.evidence+'\n\n```\n'+r.certificate.smtlib+'\n```',true)},'#formalOut');
+$('#caps').onclick=e=>guard(e.target,async()=>{const r=await api('GET','/api/capabilities');out('#capsOut',r.engines.map(x=>'- **'+x.engine+'** : '+(x.available?'disponible':'indisponible ('+x.reason+')')).join('\n'),true)},'#capsOut');
+$('#impRun').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/improvement/run',{target:$('#impTarget').value,recommended:$('#impRec').checked});pollJob(r.id,'#impStatus',j=>out('#impOut',j.error?('Erreur : '+j.error):j.report_markdown,!j.error))},'#impOut');
+$('#discBtn').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/discovery',{csv:$('#discCsv').value,target:$('#discTarget').value});pollJob(r.id,'#discStatus',j=>out('#discOut',j.error?('Erreur : '+j.error):j.report_markdown,!j.error))},'#discOut');
 $('#suites').onclick=e=>guard(e.target,async()=>out('#labOut',await api('GET','/api/lab/suites')),'#labOut');
 $('#labRun').onclick=e=>guard(e.target,async()=>{const r=await api('POST','/api/lab/run',{suite:$('#suiteSel').value,iterations:+$('#labIt').value});pollJob(r.id,'#labStatus',j=>{if(j.error)out('#labOut','Erreur : '+j.error);else{out('#labOut',j.report_markdown,true);const its=j.result.iterations;const pm=Object.keys(its[0]?.evaluation.metrics||{})[0];if(pm)Plotly.newPlot('plot4',[{x:its.map((_,i)=>i),y:its.map(i=>i.evaluation.metrics[pm].mean),mode:'lines+markers',text:its.map(i=>i.decision.decision),name:pm}],{title:pm+' par candidat évalué (accepté/rejeté)',margin:{t:40}},{responsive:true})}})},'#labOut');
 $('#expList').onclick=e=>guard(e.target,async()=>out('#expOut',await api('GET','/api/experiments')),'#expOut');

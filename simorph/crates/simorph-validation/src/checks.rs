@@ -1,7 +1,7 @@
 //! Individual validation checks.  Each returns a [`CheckResult`]; none
 //! panics on bad input (errors are reported as failed checks with details).
 
-use crate::expr::{evaluate, Value};
+use crate::expr::{evaluate, referenced_variables, Value};
 use crate::record::CheckResult;
 use indexmap::IndexMap;
 use simorph_core::{
@@ -72,71 +72,270 @@ pub fn check_dimensional_against_problem(m: &ComponentManifest, p: &ProblemSpec)
         .metric("n_problems", problems.len() as f64)
 }
 
-/// Check an equation of the form `lhs = a*b/c^2` dimensionally, where each
-/// symbol is looked up in `units` (symbol → unit expression).  Only
-/// products/quotients/powers are supported in this check; sums are checked
-/// term by term when written as `lhs = t1 + t2`.
+/// Check an equation `lhs = rhs` dimensionally, where each symbol is looked
+/// up in `units` (symbol → unit expression).  The right-hand side is parsed
+/// with a real expression grammar (sums, products, quotients, powers with
+/// numeric exponents, unary minus, scientific notation, parentheses and
+/// function calls): every term of a sum must share one dimension; `abs` and
+/// `min`/`max` preserve dimensions; `sqrt` halves them; transcendental
+/// functions (`exp, ln, log10, sin, cos, tan, ...`) require dimensionless
+/// arguments and return dimensionless values.
 pub fn check_equation_dimensions(equation: &str, units: &IndexMap<String, String>) -> CheckResult {
     let name = "equation_dimensions";
     let Some((lhs, rhs)) = equation.split_once('=') else {
         return CheckResult::fail(name, format!("`{equation}` has no `=`"));
     };
     let lhs = lhs.trim();
-    let lhs_unit = match units.get(lhs) {
-        Some(u) => u,
-        None => return CheckResult::fail(name, format!("no unit declared for `{lhs}`")),
+    let lhs_dim = match dimension_of(lhs, units) {
+        Ok(d) => d,
+        Err(e) => return CheckResult::fail(name, format!("left-hand side `{lhs}`: {e}")),
     };
-    // Replace each symbol in the rhs with its unit expression, wrapped in
-    // parentheses, then let simorph-units parse the resulting expression.
-    let terms: Vec<&str> = rhs
-        .split(|c| c == '+' || c == '-')
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .collect();
-    let mut details = vec![];
-    for term in &terms {
-        let mut expr = String::new();
-        let mut sym = String::new();
-        let flush = |sym: &mut String, expr: &mut String| -> Result<(), String> {
-            if sym.is_empty() {
-                return Ok(());
+    match dimension_of(rhs, units) {
+        Ok(d) if d == lhs_dim => CheckResult::pass(name, format!("`{}` ~ [{lhs_dim}]", rhs.trim())),
+        Ok(d) => CheckResult::fail(
+            name,
+            format!("`{equation}`: left [{lhs_dim}] ≠ right [{d}]"),
+        ),
+        Err(e) => CheckResult::fail(name, format!("`{equation}`: {e}")),
+    }
+}
+
+/// Dimension of an arithmetic expression whose symbols have declared units.
+pub fn dimension_of(
+    expr: &str,
+    units: &IndexMap<String, String>,
+) -> Result<simorph_units::Dimension, String> {
+    let toks = dim_tokens(expr)?;
+    let mut p = DimParser {
+        t: toks,
+        i: 0,
+        units,
+        depth: 0,
+    };
+    let d = p.sum()?;
+    if p.i != p.t.len() {
+        return Err(format!("unexpected trailing input in `{expr}`"));
+    }
+    Ok(d.0)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum DTok {
+    Num(f64),
+    Id(String),
+    Op(char),
+}
+
+fn dim_tokens(s: &str) -> Result<Vec<DTok>, String> {
+    let c: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    let mut out = vec![];
+    while i < c.len() {
+        let ch = c[i];
+        if ch.is_whitespace() {
+            i += 1;
+        } else if ch.is_ascii_digit() || (ch == '.' && i + 1 < c.len() && c[i + 1].is_ascii_digit())
+        {
+            let st = i;
+            while i < c.len() && (c[i].is_ascii_digit() || c[i] == '.') {
+                i += 1;
             }
-            if sym.chars().all(|c| c.is_ascii_digit() || c == '.') {
-                expr.push_str(sym);
-            } else {
-                match units.get(sym.as_str()) {
-                    Some(u) => {
-                        expr.push('(');
-                        expr.push_str(u);
-                        expr.push(')');
+            // scientific notation: e/E followed by optional sign and digits
+            if i < c.len() && (c[i] == 'e' || c[i] == 'E') {
+                let mut j = i + 1;
+                if j < c.len() && (c[j] == '+' || c[j] == '-') {
+                    j += 1;
+                }
+                if j < c.len() && c[j].is_ascii_digit() {
+                    while j < c.len() && c[j].is_ascii_digit() {
+                        j += 1;
                     }
-                    None => return Err(format!("no unit declared for `{sym}`")),
+                    i = j;
                 }
             }
-            sym.clear();
-            Ok(())
-        };
-        for ch in term.chars() {
-            if ch.is_alphanumeric() || ch == '_' || ch == '.' {
-                sym.push(ch);
-            } else {
-                if let Err(e) = flush(&mut sym, &mut expr) {
-                    return CheckResult::fail(name, e);
-                }
-                expr.push(ch);
+            let t: String = c[st..i].iter().collect();
+            out.push(DTok::Num(
+                t.parse().map_err(|_| format!("bad number `{t}`"))?,
+            ));
+        } else if ch.is_alphabetic() || ch == '_' {
+            let st = i;
+            while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_' || c[i] == '.') {
+                i += 1;
             }
-        }
-        if let Err(e) = flush(&mut sym, &mut expr) {
-            return CheckResult::fail(name, e);
-        }
-        match simorph_units::check_same_dimension(lhs_unit, &expr) {
-            Ok(()) => details.push(format!("`{term}` ~ [{lhs_unit}]")),
-            Err(e) => {
-                return CheckResult::fail(name, format!("term `{term}` of `{equation}`: {e}"))
-            }
+            out.push(DTok::Id(c[st..i].iter().collect()));
+        } else if "+-*/^(),".contains(ch) {
+            out.push(DTok::Op(ch));
+            i += 1;
+        } else {
+            return Err(format!("unexpected character `{ch}`"));
         }
     }
-    CheckResult::pass(name, details.join("; "))
+    Ok(out)
+}
+
+/// (dimension, constant value if the sub-expression is a pure number)
+type DimVal = (simorph_units::Dimension, Option<f64>);
+
+struct DimParser<'a> {
+    t: Vec<DTok>,
+    i: usize,
+    units: &'a IndexMap<String, String>,
+    depth: usize,
+}
+
+impl<'a> DimParser<'a> {
+    fn peek_op(&self, op: char) -> bool {
+        matches!(self.t.get(self.i), Some(DTok::Op(o)) if *o == op)
+    }
+    fn sum(&mut self) -> Result<DimVal, String> {
+        let mut l = self.prod()?;
+        while self.peek_op('+') || self.peek_op('-') {
+            let op = if self.peek_op('+') { '+' } else { '-' };
+            self.i += 1;
+            let r = self.prod()?;
+            if r.0 != l.0 {
+                return Err(format!("sum of [{}] and [{}]", l.0, r.0));
+            }
+            l.1 = match (l.1, r.1) {
+                (Some(a), Some(b)) => Some(if op == '+' { a + b } else { a - b }),
+                _ => None,
+            };
+        }
+        Ok(l)
+    }
+    fn prod(&mut self) -> Result<DimVal, String> {
+        let mut l = self.unary()?;
+        while self.peek_op('*') || self.peek_op('/') {
+            let mul = self.peek_op('*');
+            self.i += 1;
+            let r = self.unary()?;
+            l = if mul {
+                (l.0.mul(r.0), l.1.zip(r.1).map(|(a, b)| a * b))
+            } else {
+                (l.0.div(r.0), l.1.zip(r.1).map(|(a, b)| a / b))
+            };
+        }
+        Ok(l)
+    }
+    fn unary(&mut self) -> Result<DimVal, String> {
+        self.depth += 1;
+        if self.depth > 256 {
+            return Err("expression nested too deeply".into());
+        }
+        let r = if self.peek_op('-') || self.peek_op('+') {
+            let neg = self.peek_op('-');
+            self.i += 1;
+            self.unary()
+                .map(|(d, v)| (d, v.map(|x| if neg { -x } else { x })))
+        } else {
+            self.pow()
+        };
+        self.depth -= 1;
+        r
+    }
+    fn pow(&mut self) -> Result<DimVal, String> {
+        let base = self.atom()?;
+        if self.peek_op('^') {
+            self.i += 1;
+            let e = self.unary()?;
+            if !e.0.is_dimensionless() {
+                return Err(format!("exponent has dimension [{}]", e.0));
+            }
+            let Some(x) = e.1 else {
+                if base.0.is_dimensionless() {
+                    return Ok((base.0, None));
+                }
+                return Err("non-constant exponent on a dimensional base".into());
+            };
+            let (p, q) =
+                rational(x).ok_or_else(|| format!("exponent {x} is not a simple rational"))?;
+            return Ok((base.0.pow(p, q), base.1.map(|b| b.powf(x))));
+        }
+        Ok(base)
+    }
+    fn atom(&mut self) -> Result<DimVal, String> {
+        match self.t.get(self.i).cloned() {
+            Some(DTok::Num(x)) => {
+                self.i += 1;
+                Ok((simorph_units::Dimension::NONE, Some(x)))
+            }
+            Some(DTok::Op('(')) => {
+                self.i += 1;
+                let v = self.sum()?;
+                if !self.peek_op(')') {
+                    return Err("expected `)`".into());
+                }
+                self.i += 1;
+                Ok(v)
+            }
+            Some(DTok::Id(name)) => {
+                self.i += 1;
+                if self.peek_op('(') {
+                    self.i += 1;
+                    let mut args = vec![self.sum()?];
+                    while self.peek_op(',') {
+                        self.i += 1;
+                        args.push(self.sum()?);
+                    }
+                    if !self.peek_op(')') {
+                        return Err(format!("expected `)` after arguments of `{name}`"));
+                    }
+                    self.i += 1;
+                    return func_dim(&name, &args);
+                }
+                match self.units.get(&name) {
+                    Some(u) => simorph_units::parse_unit(u)
+                        .map(|u| (u.dimension, None))
+                        .map_err(|e| format!("unit of `{name}`: {e}")),
+                    None if name == "pi" || name == "e" => {
+                        Ok((simorph_units::Dimension::NONE, None))
+                    }
+                    None => Err(format!("no unit declared for `{name}`")),
+                }
+            }
+            other => Err(format!("unexpected token {other:?}")),
+        }
+    }
+}
+
+fn rational(x: f64) -> Option<(i16, i16)> {
+    for q in 1..=12i16 {
+        let p = x * q as f64;
+        if (p - p.round()).abs() < 1e-9 && p.abs() < 10_000.0 {
+            return Some((p.round() as i16, q));
+        }
+    }
+    None
+}
+
+fn func_dim(name: &str, args: &[DimVal]) -> Result<DimVal, String> {
+    let none = simorph_units::Dimension::NONE;
+    match name {
+        "abs" if args.len() == 1 => Ok((args[0].0, None)),
+        "sqrt" if args.len() == 1 => Ok((args[0].0.pow(1, 2), None)),
+        "min" | "max" if !args.is_empty() => {
+            if args.iter().any(|a| a.0 != args[0].0) {
+                return Err(format!("`{name}` of arguments with different dimensions"));
+            }
+            Ok((args[0].0, None))
+        }
+        "exp" | "ln" | "log" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
+        | "sinh" | "cosh" | "tanh" => {
+            if args.len() != 1 {
+                return Err(format!("`{name}` takes one argument"));
+            }
+            if !args[0].0.is_dimensionless() {
+                return Err(format!(
+                    "`{name}` of a dimensional argument [{}]",
+                    args[0].0
+                ));
+            }
+            Ok((none, None))
+        }
+        _ => Err(format!(
+            "function `{name}` is not supported by the dimensional check"
+        )),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +350,23 @@ pub fn check_invariants(invariants: &[String], result: &TaskResult) -> CheckResu
     let mut failed = vec![];
     let mut errors = vec![];
     for inv in invariants {
+        // An invariant reading a non-finite value cannot be said to hold.
+        if let Ok(names) = referenced_variables(inv) {
+            let bad: Vec<&String> = names
+                .iter()
+                .filter(|n| vars.get(*n).map(|v| v.is_nan()).unwrap_or(false))
+                .collect();
+            if !bad.is_empty() {
+                failed.push(format!(
+                    "{inv} (non-finite input: {})",
+                    bad.iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                continue;
+            }
+        }
         match evaluate(inv, &vars) {
             Ok(Value::Bool(true)) => {}
             Ok(Value::Bool(false)) => failed.push(inv.clone()),
@@ -175,33 +391,47 @@ pub fn check_invariants(invariants: &[String], result: &TaskResult) -> CheckResu
         .metric("n_violated", failed.len() as f64)
 }
 
-/// Flatten a result into expression variables.
+/// Flatten a result into expression variables.  Non-finite numbers are
+/// serialised as JSON `null`; they are mapped back to NaN (never dropped) so
+/// that invariants reading them fail.  Array outputs expose `name.min`,
+/// `name.max`, `name.first`, `name.last` (NaN if any element is NaN or
+/// non-numeric) and `name.len` (all elements).
 pub fn result_variables(result: &TaskResult) -> IndexMap<String, f64> {
     let mut vars = IndexMap::new();
-    for (k, v) in &result.outputs {
-        match v {
-            serde_json::Value::Number(n) => {
-                if let Some(f) = n.as_f64() {
-                    vars.insert(k.clone(), f);
+    let num = |x: &serde_json::Value| -> f64 {
+        match x {
+            serde_json::Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
+            serde_json::Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
                 }
             }
-            serde_json::Value::Bool(b) => {
-                vars.insert(k.clone(), if *b { 1.0 } else { 0.0 });
+            _ => f64::NAN,
+        }
+    };
+    for (k, v) in &result.outputs {
+        match v {
+            serde_json::Value::Number(_) | serde_json::Value::Bool(_) | serde_json::Value::Null => {
+                vars.insert(k.clone(), num(v));
             }
             serde_json::Value::Array(a) => {
-                let nums: Vec<f64> = a.iter().filter_map(|x| x.as_f64()).collect();
+                let nums: Vec<f64> = a.iter().map(num).collect();
+                vars.insert(format!("{k}.len"), nums.len() as f64);
                 if !nums.is_empty() {
-                    vars.insert(
-                        format!("{k}.min"),
-                        nums.iter().cloned().fold(f64::INFINITY, f64::min),
-                    );
-                    vars.insert(
-                        format!("{k}.max"),
-                        nums.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
-                    );
+                    let any_nan = nums.iter().any(|x| x.is_nan());
+                    let fold = |init: f64, f: fn(f64, f64) -> f64| {
+                        if any_nan {
+                            f64::NAN
+                        } else {
+                            nums.iter().cloned().fold(init, f)
+                        }
+                    };
+                    vars.insert(format!("{k}.min"), fold(f64::INFINITY, f64::min));
+                    vars.insert(format!("{k}.max"), fold(f64::NEG_INFINITY, f64::max));
                     vars.insert(format!("{k}.first"), nums[0]);
                     vars.insert(format!("{k}.last"), nums[nums.len() - 1]);
-                    vars.insert(format!("{k}.len"), nums.len() as f64);
                 }
             }
             _ => {}
@@ -275,7 +505,15 @@ pub fn check_convergence_order(
     expected_order: f64,
     tolerance: f64,
 ) -> CheckResult {
-    match richardson(seq, Some(expected_order)) {
+    // An observed order needs at least three refinement levels; with two
+    // points the "observed" order would just be the expected one (audit).
+    if seq.len() < 3 {
+        return CheckResult::fail(
+            "convergence_order",
+            format!("insufficient data: {} point(s), at least 3 refinement levels are required to observe an order", seq.len()),
+        );
+    }
+    match richardson(seq, None) {
         Ok(est) => {
             let ok = est.observed_order >= expected_order - tolerance;
             let base = if ok {
@@ -1072,5 +1310,62 @@ mod tests {
         assert!(!check_generalisation(0.99, 0.80, true, 0.05, 0.7).passed);
         assert!(!check_generalisation(0.95, 0.93, true, 0.05, 0.94).passed);
         assert!(check_generalisation(0.10, 0.11, false, 0.2, 0.2).passed);
+    }
+
+    #[test]
+    fn audit_equation_dimensions_handle_exponents_scientific_notation_and_functions() {
+        let mut u = IndexMap::new();
+        for (k, v) in [
+            ("x", "m"),
+            ("t", "s"),
+            ("v", "m/s"),
+            ("k", "1/s"),
+            ("x0", "m"),
+            ("g", "m/s^2"),
+            ("L", "m"),
+            ("T", "s"),
+            ("E", "J"),
+            ("m", "kg"),
+            ("c", "m/s"),
+        ] {
+            u.insert(k.to_string(), v.to_string());
+        }
+        // `t^-1` and `1e-3` used to be split on `-`.
+        assert!(check_equation_dimensions("k = t^-1", &u).passed);
+        assert!(check_equation_dimensions("x = 1e-3*v*t + 2e3*x0", &u).passed);
+        assert!(check_equation_dimensions("x = x0*exp(-k*t)", &u).passed);
+        assert!(check_equation_dimensions("T = 2*pi*sqrt(L/g)", &u).passed);
+        // Wrong: exp of a dimensional argument, E = m c.
+        assert!(!check_equation_dimensions("x = x0*exp(-t)", &u).passed);
+        assert!(!check_equation_dimensions("E = m*c", &u).passed);
+        assert!(check_equation_dimensions("E = m*c^2", &u).passed);
+        assert!(!check_equation_dimensions("x = v + t", &u).passed);
+    }
+
+    #[test]
+    fn audit_convergence_order_needs_three_points() {
+        let r = check_convergence_order(&[(0.1, 1.0), (0.05, 2.0)], 2.0, 0.1);
+        assert!(!r.passed && r.details.contains("insufficient"));
+    }
+
+    #[test]
+    fn audit_invariants_fail_on_nan_inputs_and_arrays_keep_nan() {
+        let mut res = TaskResult::new(
+            &TaskRequest::new(simorph_core::ComponentId::new()),
+            simorph_core::EvidenceLevel::Simulated,
+        );
+        res.outputs
+            .insert("T".into(), serde_json::json!([250.0, null, 280.0]));
+        res.outputs.insert("y".into(), serde_json::Value::Null);
+        assert!(!check_invariants(&["T.max <= 300 && T.len == 3".into()], &res).passed);
+        assert!(!check_invariants(&["y < 1".into()], &res).passed);
+        assert!(!check_invariants(&["max(y, 0) < 1e-6".into()], &res).passed);
+        let mut ok = TaskResult::new(
+            &TaskRequest::new(simorph_core::ComponentId::new()),
+            simorph_core::EvidenceLevel::Simulated,
+        );
+        ok.outputs
+            .insert("T".into(), serde_json::json!([250.0, 260.0, 280.0]));
+        assert!(check_invariants(&["T.max <= 300 && T.len == 3".into()], &ok).passed);
     }
 }

@@ -190,8 +190,13 @@ impl ExperimentRecord {
     pub fn n_failed(&self) -> usize {
         self.runs.len() - self.n_success()
     }
+    /// True only when success criteria were defined and all of them hold
+    /// (audit: an experiment without criteria used to count as "met").
     pub fn all_criteria_met(&self) -> bool {
-        self.criteria_results.iter().all(|(_, ok)| *ok)
+        self.criteria_defined() && self.criteria_results.iter().all(|(_, ok)| *ok)
+    }
+    pub fn criteria_defined(&self) -> bool {
+        !self.criteria_results.is_empty()
     }
     pub fn output_column(&self, name: &str) -> Vec<Option<f64>> {
         self.runs.iter().map(|r| r.output_f64(name)).collect()

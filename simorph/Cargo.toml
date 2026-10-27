@@ -34,6 +34,16 @@ members = [
     "adapters/fmi",
     "apps/cli",
     "apps/web",
+    "crates/simorph-formal",
+    "crates/simorph-evolution",
+    "crates/simorph-learning",
+    "crates/simorph-distributed",
+    "crates/simorph-multimodal",
+    "crates/simorph-connectors",
+    "services/problem-understanding",
+    "services/agents",
+    "services/improvement-loop",
+    "adapters/scientific-python",
     "tests/integration",
 ]
 
@@ -68,3 +78,11 @@ indexmap = { version = "2", features = ["serde"] }
 parking_lot = "0.12"
 async-trait = "0.1"
 nalgebra = "0.33"
+libc = "0.2"
+hmac = "0.12"
+
+# Disk budget: incremental artefacts (~9 GB for this workspace) are disabled;
+# full rebuilds of a single crate stay under a minute.
+[profile.dev]
+incremental = false
+debug = "line-tables-only"

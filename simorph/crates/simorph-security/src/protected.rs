@@ -17,13 +17,41 @@ pub struct ProtectedGuard<T> {
 }
 
 impl<T: Serialize> ProtectedGuard<T> {
-    /// Seal a value.  Anyone can create a guard; only admins can change it.
+    /// Seal a value with a plain content hash.  This detects accidental or
+    /// out-of-band modification by parties that do not recompute the hash;
+    /// against an adversary able to rewrite the stored value *and* its seal,
+    /// use [`ProtectedGuard::seal_keyed`] / [`ProtectedGuard::verify_keyed`],
+    /// whose key never leaves the policy holder.
     pub fn seal(value: T) -> Self {
         let seal = hashing::hash_json(&value).expect("serialisable");
         Self {
             value,
             seal,
             history: vec![],
+        }
+    }
+
+    /// Seal with an HMAC-SHA256 under a secret key held by the policy owner.
+    pub fn seal_keyed(value: T, key: &[u8]) -> Self {
+        let body = serde_json::to_string(&value).expect("serialisable");
+        Self {
+            seal: format!("hmac:{}", crate::rbac::sign(&body, key)),
+            value,
+            history: vec![],
+        }
+    }
+
+    /// Verify a keyed seal: an attacker without the key cannot produce a
+    /// matching seal for a modified value.
+    pub fn verify_keyed(&self, key: &[u8]) -> Result<()> {
+        let body = serde_json::to_string(&self.value)?;
+        let expected = format!("hmac:{}", crate::rbac::sign(&body, key));
+        if crate::rbac::mac_eq(&expected, &self.seal) {
+            Ok(())
+        } else {
+            Err(SimorphError::Protected(
+                "keyed seal mismatch: value or seal altered".into(),
+            ))
         }
     }
 
@@ -143,5 +171,24 @@ mod tests {
         let tampered = json.replace("[1,2,3]", "[1,2,4]");
         let g2: ProtectedGuard<Vec<i32>> = serde_json::from_str(&tampered).unwrap();
         assert!(matches!(g2.verify(), Err(SimorphError::Protected(_))));
+    }
+}
+
+#[cfg(test)]
+mod keyed_tests {
+    use super::*;
+
+    #[test]
+    fn keyed_seal_resists_recomputed_plain_hash() {
+        let key = b"server-key";
+        let g = ProtectedGuard::seal_keyed(vec![1, 2, 3], key);
+        g.verify_keyed(key).unwrap();
+        // Attacker rewrites the value and recomputes a plain hash as seal.
+        let mut json: serde_json::Value = serde_json::to_value(&g).unwrap();
+        json["value"] = serde_json::json!([9, 9, 9]);
+        json["seal"] = serde_json::json!(hashing::hash_json(&vec![9, 9, 9]).unwrap());
+        let forged: ProtectedGuard<Vec<i32>> = serde_json::from_value(json).unwrap();
+        assert!(forged.verify_keyed(key).is_err());
+        assert!(g.verify_keyed(b"other-key").is_err());
     }
 }

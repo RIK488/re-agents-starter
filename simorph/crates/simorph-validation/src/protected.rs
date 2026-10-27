@@ -5,6 +5,14 @@
 //! set is mutable until sealed; afterwards every mutation returns
 //! `SimorphError::Protected` and the seal hash is embedded in each
 //! validation record so that a swapped reference set is detectable.
+//!
+//! Two seal modes:
+//! * unkeyed ([`ProtectedReferences::seal`]) — a plain content hash. It
+//!   detects accidental or naive edits only: anyone able to rewrite the file
+//!   can recompute the hash.
+//! * keyed ([`ProtectedReferences::seal_keyed`]) — an HMAC-SHA256 under a key
+//!   held by the policy owner; edit-and-rehash is detected because the
+//!   attacker cannot recompute the MAC without the key.
 
 use crate::classify::ReferenceOrigin;
 use schemars::JsonSchema;
@@ -66,6 +74,58 @@ impl ProtectedReferences {
         h
     }
 
+    /// Seal with an HMAC-SHA256 under `key` (stored as `hmac:<hex>`).
+    pub fn seal_keyed(&mut self, key: &[u8]) -> String {
+        if let Some(h) = &self.seal {
+            return h.clone();
+        }
+        let body = serde_json::to_vec(&self.cases).expect("serialisable");
+        let h = format!(
+            "hmac:{}",
+            simorph_core::hashing::hmac_sha256_hex(key, &body)
+        );
+        self.seal = Some(h.clone());
+        h
+    }
+
+    /// Verify a keyed seal.
+    pub fn verify_keyed(&self, key: &[u8]) -> Result<()> {
+        let Some(h) = &self.seal else {
+            return Err(SimorphError::Validation(format!(
+                "reference set `{}` is not sealed",
+                self.name
+            )));
+        };
+        let body = serde_json::to_vec(&self.cases)?;
+        let expected = format!(
+            "hmac:{}",
+            simorph_core::hashing::hmac_sha256_hex(key, &body)
+        );
+        if simorph_core::hashing::ct_eq(&expected, h) {
+            Ok(())
+        } else {
+            Err(SimorphError::Protected(format!(
+                "reference set `{}`: keyed seal mismatch (tampered or wrong key)",
+                self.name
+            )))
+        }
+    }
+
+    /// Load and verify a set sealed with [`ProtectedReferences::seal_keyed`].
+    pub fn load_keyed(path: impl AsRef<std::path::Path>, key: &[u8]) -> Result<Self> {
+        let s: Self = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+        s.verify_keyed(key)?;
+        Ok(s)
+    }
+
+    /// Origins indexed by case name (input of `classify_with_origins`).
+    pub fn origins_by_case(&self) -> indexmap::IndexMap<String, ReferenceOrigin> {
+        self.cases
+            .iter()
+            .map(|c| (c.case.name.clone(), c.origin))
+            .collect()
+    }
+
     pub fn is_sealed(&self) -> bool {
         self.seal.is_some()
     }
@@ -80,6 +140,10 @@ impl ProtectedReferences {
         match &self.seal {
             None => Err(SimorphError::Validation(format!(
                 "reference set `{}` is not sealed",
+                self.name
+            ))),
+            Some(h) if h.starts_with("hmac:") => Err(SimorphError::Protected(format!(
+                "reference set `{}` has a keyed seal: use verify_keyed",
                 self.name
             ))),
             Some(h) => {
@@ -159,5 +223,31 @@ mod tests {
         assert!(ProtectedReferences::load(&path).is_ok());
         tampered.save(&path).unwrap();
         assert!(ProtectedReferences::load(&path).is_err());
+    }
+
+    #[test]
+    fn audit_keyed_seal_detects_edit_and_rehash() {
+        // Audit probe: editing expected value + rtol and recomputing the
+        // unkeyed hash made `load` accept the file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("refs.json");
+        let key = b"policy-owner-key";
+        let mut r = ProtectedReferences::new("refs");
+        r.add(case("a"), ReferenceOrigin::Empirical).unwrap();
+        r.seal_keyed(key);
+        r.save(&path).unwrap();
+        ProtectedReferences::load_keyed(&path, key).unwrap();
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        v["cases"][0]["case"]["expected_outputs"]["y"] = serde_json::json!(3);
+        v["cases"][0]["case"]["rtol"] = serde_json::json!(1.0);
+        let cases = v["cases"].clone();
+        let cases: Vec<ProtectedCase> = serde_json::from_value(cases).unwrap();
+        v["seal"] = serde_json::json!(hash_json(&cases).unwrap());
+        std::fs::write(&path, v.to_string()).unwrap();
+        assert!(ProtectedReferences::load_keyed(&path, key).is_err());
+        // The unkeyed loader is fooled by construction — documented limit.
+        assert!(ProtectedReferences::load(&path).is_ok());
+        assert_eq!(r.origins_by_case()["a"], ReferenceOrigin::Empirical);
     }
 }

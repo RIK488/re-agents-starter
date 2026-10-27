@@ -10,6 +10,7 @@
 //!   Network/filesystem/memory isolation is delegated to the container layer
 //!   (see `SandboxPolicy::to_container_args`).
 
+pub mod isolation;
 pub mod subprocess;
 
 pub use subprocess::{SubprocessComponent, SubprocessStats};

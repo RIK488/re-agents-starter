@@ -2,7 +2,7 @@
 //! function in this module (or in `lab`/`bench`) and is exposed both by the
 //! CLI and by the web API.
 
-use crate::registry::{default_component_set, list_components};
+use crate::registry::{component_set, list_components};
 use crate::workspace::Workspace;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ pub struct ActionInfo {
 /// implementation fails the `actions_are_implemented` test.
 pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo { id: "components.list", space: "Modélisation", label_fr: "Lister les composants (moteurs, simulateurs, outils)", cli: "simorph registry list [--domain D] [--capability C]", http: "GET /api/components" },
+    ActionInfo { id: "components.capabilities", space: "Modélisation", label_fr: "Disponibilité des moteurs externes (SciPy, SymPy, MuJoCo, Gymnasium, PyTorch)", cli: "simorph registry capabilities", http: "GET /api/capabilities" },
     ActionInfo { id: "components.show", space: "Modélisation", label_fr: "Inspecter un manifeste de composant", cli: "simorph registry show <name>", http: "GET /api/components/{name}" },
     ActionInfo { id: "units.convert", space: "Modélisation", label_fr: "Convertir une grandeur entre unités compatibles", cli: "simorph units convert <value> <from> <to>", http: "POST /api/units/convert" },
     ActionInfo { id: "units.check", space: "Validation", label_fr: "Vérifier la cohérence dimensionnelle de deux expressions", cli: "simorph units check <a> <b>", http: "POST /api/units/check" },
@@ -43,6 +44,8 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo { id: "optimisation.methods", space: "Optimisation", label_fr: "Recommander des méthodes d'optimisation selon les traits du problème", cli: "simorph optimise recommend <file>", http: "POST /api/optimisation/recommend" },
     ActionInfo { id: "uncertainty.sobol", space: "Optimisation", label_fr: "Analyse de sensibilité globale (Sobol) d'un composant", cli: "simorph uncertainty sobol <component> --input k=v --vary k=std ...", http: "POST /api/uncertainty/sobol" },
     ActionInfo { id: "lab.run", space: "IA", label_fr: "Lancer la boucle d'amélioration d'une IA sur une suite scellée", cli: "simorph lab run --suite <classifier|reasoner> [--iterations N]", http: "POST /api/lab/run" },
+    ActionInfo { id: "improvement.run", space: "IA", label_fr: "Améliorer un modèle d'IA en boucle fermée (limites → données simulées validées → entraînement → suite scellée → acceptation/rejet)", cli: "simorph improve run --target pipe|pendulum [--recommended]", http: "POST /api/improvement/run" },
+    ActionInfo { id: "discovery.run", space: "Modélisation", label_fr: "Découvrir une loi dans des données (régression symbolique dimensionnelle, validation hors échantillon)", cli: "simorph discover csv <file> --target y | simorph discover kepler", http: "POST /api/discovery" },
     ActionInfo { id: "lab.suites", space: "IA", label_fr: "Lister les suites d'évaluation scellées", cli: "simorph lab suites", http: "GET /api/lab/suites" },
     ActionInfo { id: "provenance.list", space: "Journal", label_fr: "Lister les enregistrements de provenance", cli: "simorph provenance list [--kind K]", http: "GET /api/provenance" },
     ActionInfo { id: "provenance.explain", space: "Journal", label_fr: "Expliquer pourquoi un résultat existe (chaîne causale)", cli: "simorph provenance explain <record-id>", http: "GET /api/provenance/{id}/explain" },
@@ -50,6 +53,7 @@ pub const ACTIONS: &[ActionInfo] = &[
     ActionInfo { id: "schemas.export", space: "Export", label_fr: "Exporter les schémas JSON des contrats", cli: "simorph schemas export <dir>", http: "GET /api/schemas" },
     ActionInfo { id: "bench.run", space: "Validation", label_fr: "Exécuter les bancs de référence (intégrateurs, Sobol, optimiseurs)", cli: "simorph bench", http: "POST /api/bench" },
     ActionInfo { id: "actions.list", space: "Projet", label_fr: "Lister les actions disponibles", cli: "simorph actions", http: "GET /api/actions" },
+    ActionInfo { id: "formal.check", space: "Validation", label_fr: "Prouver ou réfuter un énoncé borné (Z3, certificat re-vérifié indépendamment)", cli: "simorph formal check <request.json>", http: "POST /api/formal/check" },
     ActionInfo { id: "model.assemble", space: "Modélisation", label_fr: "Assembler la chaîne de modèles d'un problème (descripteurs, connexions, unités)", cli: "simorph model assemble <file>", http: "POST /api/models/assemble" },
     ActionInfo { id: "model.from_equations", space: "Modélisation", label_fr: "Construire et simuler un modèle à partir d'équations typées", cli: "simorph model equations <file.json>", http: "POST /api/models/from-equations" },
     ActionInfo { id: "simulator.generate", space: "Simulation", label_fr: "Générer / intégrer un simulateur (pipeline en 10 étapes)", cli: "simorph simulator generate <request.json>", http: "POST /api/simulators/generate" },
@@ -88,7 +92,7 @@ pub struct AnalysisOutput {
 }
 
 pub fn analyse(problem: &ProblemSpec) -> Result<AnalysisOutput> {
-    let set = default_component_set()?;
+    let set = component_set()?;
     let catalog = dir::StaticCatalog::new(set.manifests());
     let analysis = dir::analyse(problem, &catalog)?;
     let markdown = analysis.to_markdown();
@@ -104,7 +108,7 @@ pub struct PlanOutput {
 }
 
 pub fn plan(problem: &ProblemSpec) -> Result<PlanOutput> {
-    let set = default_component_set()?;
+    let set = component_set()?;
     let catalog = dir::StaticCatalog::new(set.manifests());
     let analysis = dir::analyse(problem, &catalog)?;
     let hypotheses = dir::formulate(problem, &analysis);
@@ -134,7 +138,35 @@ pub fn run_campaign(
     problem: ProblemSpec,
     ctl: &ExecutionControl,
 ) -> Result<dir::Campaign> {
-    let set = default_component_set()?;
+    run_campaign_with(ws, problem, component_set()?, ctl)
+}
+
+/// Run a campaign on `workers` local worker processes through the
+/// distributed coordinator; returns the campaign and the cluster metrics.
+pub fn run_campaign_distributed(
+    ws: &Workspace,
+    problem: ProblemSpec,
+    workers: usize,
+    slots: usize,
+    ctl: &ExecutionControl,
+) -> Result<(dir::Campaign, simorph_distributed::CoordinatorMetrics)> {
+    let cluster = crate::cluster::LocalCluster::start(workers, slots)?;
+    let set = crate::cluster::remote_component_set(
+        &component_set()?,
+        cluster.coordinator.clone(),
+        std::time::Duration::from_secs(900),
+    )?;
+    let c = run_campaign_with(ws, problem, set, ctl)?;
+    Ok((c, cluster.metrics()))
+}
+
+/// Run a campaign with an explicit component set (local or remote).
+pub fn run_campaign_with(
+    ws: &Workspace,
+    problem: ProblemSpec,
+    set: simorph_plugin_sdk::ComponentSet,
+    ctl: &ExecutionControl,
+) -> Result<dir::Campaign> {
     let catalog = dir::StaticCatalog::new(set.manifests());
     let analysis = dir::analyse(&problem, &catalog)?;
     let hypotheses = dir::formulate(&problem, &analysis);
@@ -230,7 +262,7 @@ pub fn execute_component(
     seed: Option<u64>,
     ctl: &ExecutionControl,
 ) -> Result<RunOutput> {
-    let set = default_component_set()?;
+    let set = component_set()?;
     let comp = set
         .get(name)
         .ok_or_else(|| SimorphError::NotFound(format!("component `{name}`")))?;
@@ -278,15 +310,11 @@ pub fn components(
     domain: Option<&str>,
     capability: Option<&str>,
 ) -> Result<Vec<ComponentManifest>> {
-    Ok(list_components(
-        &default_component_set()?,
-        domain,
-        capability,
-    ))
+    Ok(list_components(&component_set()?, domain, capability))
 }
 
 pub fn component(name: &str) -> Result<ComponentManifest> {
-    default_component_set()?
+    component_set()?
         .get(name)
         .map(|c| c.manifest().clone())
         .ok_or_else(|| SimorphError::NotFound(format!("component `{name}`")))
@@ -333,7 +361,7 @@ pub fn reproduce_experiment(
     let eid = ExperimentId::parse(id)
         .map_err(|e| SimorphError::InvalidInput(format!("bad experiment id: {e}")))?;
     let record = ws.archive.get(eid)?;
-    let set = default_component_set()?;
+    let set = component_set()?;
     let comp = set
         .get_by_id(record.plan.component_id)
         .ok_or_else(|| SimorphError::NotFound(format!("component {}", record.plan.component_id)))?;
@@ -360,7 +388,7 @@ pub struct Recommendation {
 /// Recommend optimisation methods for the first component able to produce
 /// the problem's objective.
 pub fn recommend_methods(problem: &ProblemSpec) -> Result<Recommendation> {
-    let set = default_component_set()?;
+    let set = component_set()?;
     let catalog = dir::StaticCatalog::new(set.manifests());
     let analysis = dir::analyse(problem, &catalog)?;
     let cand = analysis
@@ -396,7 +424,7 @@ pub fn sobol(
     n: usize,
     ctl: &ExecutionControl,
 ) -> Result<SobolOutput> {
-    let set = default_component_set()?;
+    let set = component_set()?;
     let comp = set
         .get(name)
         .ok_or_else(|| SimorphError::NotFound(format!("component `{name}`")))?;

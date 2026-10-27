@@ -68,6 +68,11 @@ pub enum StopReason {
     UnresolvedContradictions,
     Cancelled,
     PrerequisiteFailed,
+    /// The programme contained no executable experiment (no component can
+    /// produce the targets from the available inputs).
+    NothingToRun,
+    /// Every planned experiment ran, but at least one failed to execute.
+    CompletedWithFailures,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -141,6 +146,10 @@ pub struct Campaign {
     pub runs_used: u64,
     pub cost_used: f64,
     pub time_used_s: f64,
+    /// Cumulative (consistent, contradicting) evidence per hypothesis: a
+    /// hypothesis status reflects all experiments so far, not only the last.
+    #[serde(default)]
+    pub hypothesis_evidence: BTreeMap<String, (u32, u32)>,
 }
 
 impl Campaign {
@@ -165,6 +174,7 @@ impl Campaign {
             runs_used: 0,
             cost_used: 0.0,
             time_used_s: 0.0,
+            hypothesis_evidence: BTreeMap::new(),
         };
         c.log(
             "campaign_created",
@@ -266,9 +276,18 @@ impl Campaign {
         {
             return Some(StopReason::NoInformationGain);
         }
+        if self.programme.experiments.is_empty() {
+            return Some(StopReason::NothingToRun);
+        }
         if self.next_experiment().is_none() {
+            let execution_failed = self
+                .outcomes
+                .iter()
+                .any(|o| o.criteria.iter().any(|(n, ok)| n == "execution" && !ok));
             return Some(if self.pending_blocked_by_failure() {
                 StopReason::PrerequisiteFailed
+            } else if execution_failed {
+                StopReason::CompletedWithFailures
             } else {
                 StopReason::ProgrammeCompleted
             });
@@ -295,27 +314,40 @@ impl Campaign {
         self.cost_used += outcome.cost;
         self.time_used_s += outcome.wall_time_s;
         let succeeded = outcome.succeeded();
-        // Hypothesis revision from validated runs only: a component hypothesis
-        // is contradicted by runs that fail validation; a constraint
-        // hypothesis is supported when at least one validated run satisfies it.
-        let valid = outcome
+        // Hypothesis revision, cumulative over the whole campaign.  A
+        // component hypothesis ("C produces X inside its validity domain") is
+        // contradicted by runs that *errored* (NaN, out-of-domain, crash) and
+        // by failed reference checks — not by design points that violate a
+        // feasibility invariant (e.g. a battery brown-out), which say nothing
+        // about the component's correctness.
+        let consistent = outcome
             .runs
             .iter()
-            .filter(|r| r.valid && r.validation.is_some())
+            .filter(|r| r.validation.is_some() && r.error.is_none())
             .count() as u32;
-        let invalid = outcome.runs.iter().filter(|r| !r.valid).count() as u32;
+        let mut contradicting = outcome.runs.iter().filter(|r| r.error.is_some()).count() as u32;
+        if planned.purpose == crate::programme::ExperimentPurpose::ReferenceCheck && !succeeded {
+            contradicting += 1;
+        }
         let constraints = self.problem.constraints.clone();
         let problem_id = self.problem.id;
         for hid in &planned.hypotheses {
             let hid = *hid;
+            let acc = self
+                .hypothesis_evidence
+                .entry(hid.to_string())
+                .or_insert((0, 0));
+            acc.0 += consistent;
+            acc.1 += contradicting;
+            let (c_tot, k_tot) = *acc;
             if let Some(h) = self.hypotheses.iter_mut().find(|h| h.id == hid) {
                 let ev = HypothesisEvidence {
                     hypothesis: hid,
-                    consistent: valid,
-                    contradicting: invalid,
+                    consistent: c_tot,
+                    contradicting: k_tot,
                     notes: vec![format!(
-                        "expérience {} : {} runs validés, {} invalides",
-                        planned.name, valid, invalid
+                        "expérience {} : {} runs cohérents, {} contradictoires (cumul {}/{})",
+                        planned.name, consistent, contradicting, c_tot, k_tot
                     )],
                 };
                 revise(h, &ev);
@@ -340,11 +372,19 @@ impl Campaign {
                 .filter(|r| r.valid && r.outputs.contains_key(&c.variable))
                 .count() as u32;
             if checked > 0 {
+                let acc = self
+                    .hypothesis_evidence
+                    .entry(cid.to_string())
+                    .or_insert((0, 0));
+                acc.0 += satisfied;
+                let (sat_tot, _) = *acc;
+                // Satisfiability is existential: one validated feasible run
+                // supports it; refutation only while none has been found.
                 if let Some(h) = self.hypotheses.iter_mut().find(|h| h.id == cid) {
                     let ev = HypothesisEvidence {
                         hypothesis: cid,
-                        consistent: satisfied,
-                        contradicting: if satisfied == 0 { checked } else { 0 },
+                        consistent: sat_tot,
+                        contradicting: if sat_tot == 0 { checked } else { 0 },
                         notes: vec![format!(
                             "expérience {} : {}/{} runs satisfont la contrainte",
                             planned.name, satisfied, checked
@@ -446,35 +486,129 @@ impl Campaign {
     }
 
     /// Derive conclusions for every objective and unknown from validated runs.
-    pub fn conclude(&mut self) {
-        let mut targets: Vec<(String, String, Option<Direction>)> = self
-            .problem
-            .objectives
-            .iter()
-            .map(|o| (o.variable.clone(), o.unit.clone(), Some(o.direction)))
-            .collect();
-        for u in &self.problem.unknowns {
-            if !targets.iter().any(|t| t.0 == u.name) {
-                targets.push((u.name.clone(), u.unit.clone(), None));
+    /// Whether a run satisfies every hard constraint whose variable it reports.
+    /// Returns `(feasible, unchecked constraint names)`.
+    fn hard_feasibility(&self, r: &RunSummary) -> (bool, Vec<String>) {
+        let mut unchecked = vec![];
+        for c in self.problem.constraints.iter().filter(|c| c.hard) {
+            match r.outputs.get(&c.variable) {
+                Some(v) => {
+                    let ok = match c.kind {
+                        ConstraintKind::UpperBound => *v <= c.bound + c.tolerance,
+                        ConstraintKind::LowerBound => *v >= c.bound - c.tolerance,
+                        ConstraintKind::Equality => (*v - c.bound).abs() <= c.tolerance.max(1e-12),
+                    };
+                    if !ok {
+                        return (false, unchecked);
+                    }
+                }
+                None => unchecked.push(c.name.clone()),
             }
         }
+        (true, unchecked)
+    }
+
+    /// Derive conclusions from validated, *feasible* runs.  The retained
+    /// solution is the best feasible run for the first objective; unknowns
+    /// and secondary quantities are read from that same run whenever it
+    /// reports them, so that every number of the conclusion describes one
+    /// coherent design.
+    pub fn conclude(&mut self) {
         let runs: Vec<RunSummary> = self
             .outcomes
             .iter()
             .flat_map(|o| o.runs.iter().cloned())
             .filter(|r| r.valid && !r.reference_case)
             .collect();
-        let mut conclusions = vec![];
-        for (var, unit, dir) in targets {
-            let mut cands: Vec<&RunSummary> = runs
+        let feasible: Vec<&RunSummary> =
+            runs.iter().filter(|r| self.hard_feasibility(r).0).collect();
+        let infeasible_count = runs.len() - feasible.len();
+        let key = |r: &RunSummary, o: &Objective| -> Option<f64> {
+            let v = *r.outputs.get(&o.variable)?;
+            Some(match o.direction {
+                Direction::Minimize => v,
+                Direction::Maximize => -v,
+                Direction::Target => (v - o.target.unwrap_or(0.0)).abs(),
+            })
+        };
+        let primary = self.problem.objectives.first().cloned();
+        let retained: Option<RunSummary> = primary.as_ref().and_then(|o| {
+            feasible
                 .iter()
-                .filter(|r| r.outputs.contains_key(&var))
-                .collect();
-            if cands.is_empty() {
+                .filter_map(|r| key(r, o).map(|k| (k, *r)))
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(_, r)| r.clone())
+        });
+        let supported: Vec<HypothesisId> = self
+            .hypotheses
+            .iter()
+            .filter(|h| h.status == HypothesisStatus::Supported)
+            .map(|h| h.id)
+            .collect();
+        let mut targets: Vec<(String, String, Option<Objective>)> = self
+            .problem
+            .objectives
+            .iter()
+            .map(|o| (o.variable.clone(), o.unit.clone(), Some(o.clone())))
+            .collect();
+        for u in &self.problem.unknowns {
+            if !targets.iter().any(|t| t.0 == u.name) {
+                targets.push((u.name.clone(), u.unit.clone(), None));
+            }
+        }
+        let mut conclusions = vec![];
+        for (var, unit, obj) in targets {
+            let mut caveats = vec![];
+            // Pick the run supplying the value.
+            let chosen: Option<RunSummary> = match &obj {
+                Some(o)
+                    if primary
+                        .as_ref()
+                        .map(|p| p.variable == o.variable)
+                        .unwrap_or(false) =>
+                {
+                    retained.clone()
+                }
+                Some(o) => {
+                    // Secondary objective: report its value at the retained design.
+                    match retained.as_ref().filter(|r| r.outputs.contains_key(&var)) {
+                        Some(r) => {
+                            caveats.push(format!("objectif secondaire évalué à la solution retenue (optimisé sur `{}`)", primary.as_ref().map(|p| p.variable.clone()).unwrap_or_default()));
+                            Some(r.clone())
+                        }
+                        None => feasible
+                            .iter()
+                            .filter_map(|r| key(r, o).map(|k| (k, *r)))
+                            .min_by(|a, b| {
+                                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .map(|(_, r)| r.clone()),
+                    }
+                }
+                None => {
+                    match retained.as_ref().filter(|r| r.outputs.contains_key(&var)) {
+                        Some(r) => Some(r.clone()),
+                        None => {
+                            let r = feasible
+                                .iter()
+                                .find(|r| r.outputs.contains_key(&var))
+                                .map(|r| (*r).clone());
+                            if r.is_some() && retained.is_some() {
+                                caveats.push("valeur lue sur un run faisable différent de la solution retenue".into());
+                            }
+                            r
+                        }
+                    }
+                }
+            };
+            let Some(best) = chosen else {
+                let any = runs.iter().any(|r| r.outputs.contains_key(&var));
                 conclusions.push(Conclusion {
-                    statement: format!(
-                        "Aucun run validé ne fournit `{var}` : la grandeur reste une inconnue."
-                    ),
+                    statement: if any {
+                        format!("Aucun run validé et faisable (contraintes dures) ne fournit `{var}` : aucune solution retenue.")
+                    } else {
+                        format!("Aucun run validé ne fournit `{var}` : la grandeur reste une inconnue.")
+                    },
                     variable: var.clone(),
                     value: f64::NAN,
                     unit,
@@ -482,49 +616,17 @@ impl Campaign {
                     supporting_runs: vec![],
                     validations: vec![],
                     hypotheses: vec![],
-                    caveats: vec!["données ou modèle supplémentaires requis".into()],
+                    caveats: vec![if any { format!("{infeasible_count} run(s) valides mais infaisables") } else { "données ou modèle supplémentaires requis".into() }],
                 });
                 continue;
+            };
+            let (_, unchecked) = self.hard_feasibility(&best);
+            for u in unchecked {
+                caveats.push(format!(
+                    "contrainte dure « {u} » non vérifiable sur ce run (variable non produite)"
+                ));
             }
-            match dir {
-                Some(Direction::Minimize) => {
-                    cands.sort_by(|a, b| a.outputs[&var].partial_cmp(&b.outputs[&var]).unwrap())
-                }
-                Some(Direction::Maximize) => {
-                    cands.sort_by(|a, b| b.outputs[&var].partial_cmp(&a.outputs[&var]).unwrap())
-                }
-                Some(Direction::Target) => {
-                    let t = self
-                        .problem
-                        .objectives
-                        .iter()
-                        .find(|o| o.variable == var)
-                        .and_then(|o| o.target)
-                        .unwrap_or(0.0);
-                    cands.sort_by(|a, b| {
-                        (a.outputs[&var] - t)
-                            .abs()
-                            .partial_cmp(&(b.outputs[&var] - t).abs())
-                            .unwrap()
-                    })
-                }
-                None => {}
-            }
-            let best = cands[0];
-            // the conclusion's level is the weakest level among the supporting runs
-            let level = cands
-                .iter()
-                .take(1)
-                .map(|r| r.evidence)
-                .next()
-                .unwrap_or(EvidenceLevel::UnverifiedHypothesis);
-            let hyps: Vec<HypothesisId> = self
-                .hypotheses
-                .iter()
-                .filter(|h| h.status == HypothesisStatus::Supported)
-                .map(|h| h.id)
-                .collect();
-            let mut caveats = vec![];
+            let level = best.evidence;
             if self
                 .contradictions
                 .iter()
@@ -535,32 +637,38 @@ impl Campaign {
             if level == EvidenceLevel::Simulated {
                 caveats.push("résultat simulé : non confronté à des observations".into());
             }
+            let value = best.outputs[&var];
             conclusions.push(Conclusion {
                 statement: format!(
                     "{} : `{var}` = {:.6e} [{unit}] ({})",
-                    match dir {
-                        Some(Direction::Minimize) => "Meilleure valeur (minimum)",
-                        Some(Direction::Maximize) => "Meilleure valeur (maximum)",
-                        Some(Direction::Target) => "Valeur la plus proche de la cible",
-                        None => "Valeur déterminée",
+                    match obj.as_ref().map(|o| o.direction) {
+                        Some(Direction::Minimize) => "Meilleure valeur faisable (minimum)",
+                        Some(Direction::Maximize) => "Meilleure valeur faisable (maximum)",
+                        Some(Direction::Target) => "Valeur faisable la plus proche de la cible",
+                        None => "Valeur à la solution retenue",
                     },
-                    best.outputs[&var],
+                    value,
                     level.label_fr()
                 ),
                 variable: var.clone(),
-                value: best.outputs[&var],
+                value,
                 unit,
                 level,
                 supporting_runs: vec![best.run_id],
                 validations: best.validation.into_iter().collect(),
-                hypotheses: hyps,
+                hypotheses: supported.clone(),
                 caveats,
             });
         }
         self.conclusions = conclusions;
         self.log(
             "concluded",
-            &format!("{} conclusions", self.conclusions.len()),
+            &format!(
+                "{} conclusions ({} runs valides, {} infaisables écartés)",
+                self.conclusions.len(),
+                runs.len(),
+                infeasible_count
+            ),
             vec![],
         );
     }

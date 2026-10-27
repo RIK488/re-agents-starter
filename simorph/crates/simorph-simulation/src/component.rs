@@ -81,8 +81,14 @@ impl OdeComponent {
         for (p, (lo, hi)) in model.validity_ranges() {
             manifest.validity_domain.ranges.insert(p, (lo, hi));
         }
-        manifest.uncertainty_model = UncertaintyModel::RelativeErrorBound {
-            rtol: defaults.rtol,
+        // rtol is a *local* (per-step) tolerance of the adaptive method; it
+        // does not bound the global error, which may be much larger over long
+        // horizons (audit: rtol = 1e-8 gave a global error of 2.3e-5).
+        manifest.uncertainty_model = UncertaintyModel::Described {
+            description: format!(
+                "local error tolerance rtol = {:e} per step (adaptive methods); global error not bounded; fixed-step methods have no error estimate",
+                defaults.rtol
+            ),
         };
         Self {
             model,
@@ -226,8 +232,16 @@ impl Component for OdeComponent {
         res.metrics.insert("rhs_evals".into(), s.rhs_evals as f64);
         res.metrics
             .insert("newton_iters".into(), s.newton_iters as f64);
-        res.metrics
-            .insert("max_error_estimate".into(), s.max_error_estimate);
+        // Only adaptive methods have a local error estimate; for fixed-step
+        // methods the metric is omitted rather than reported as 0.
+        if s.error_estimated {
+            res.metrics
+                .insert("max_error_estimate".into(), s.max_error_estimate);
+        }
+        res.metrics.insert(
+            "error_estimated".into(),
+            if s.error_estimated { 1.0 } else { 0.0 },
+        );
         res.metrics.insert("events".into(), s.events as f64);
         if traj.terminated_by_event {
             res.warnings

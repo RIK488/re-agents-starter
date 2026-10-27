@@ -1,0 +1,28 @@
+[package]
+name = "simorph-evolution"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH algorithm and agent evolution engine: dimension-aware genetic programming, MAP-Elites quality-diversity, sandboxed evolution of real Python programs, scientific-law discovery."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-units = { path = "../simorph-units" }
+simorph-optimization = { path = "../simorph-optimization" }
+simorph-simulation = { path = "../simorph-simulation" }
+simorph-validation = { path = "../simorph-validation" }
+simorph-provenance = { path = "../simorph-provenance" }
+simorph-execution = { path = "../simorph-execution" }
+simorph-security = { path = "../simorph-security" }
+simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+simorph-plugin-physics = { path = "../../plugins/physics" }
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+indexmap.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_distr.workspace = true
+rayon.workspace = true
+regex = "1"
+ureq = { version = "2", features = ["json"] }

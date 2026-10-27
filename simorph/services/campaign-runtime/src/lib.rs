@@ -53,11 +53,167 @@ pub struct Observation {
     pub std: f64,
 }
 
+/// Load calibration observations from the problem's CSV attachments.
+///
+/// Header cells are `name [unit]` (unit optional, defaulting to the
+/// problem's declared unit).  Input columns are knowns or design variables;
+/// the observed column is an objective, constraint or unknown variable; a
+/// column `name_std [unit]` gives its standard deviation (required: an
+/// observation without uncertainty cannot validate anything).  Values are
+/// converted into the problem's units.
+pub fn load_observations(problem: &ProblemSpec) -> Result<Vec<Observation>> {
+    let unit_of_input = |n: &str| {
+        problem
+            .knowns
+            .iter()
+            .find(|q| q.name == n)
+            .map(|q| q.unit.clone())
+            .or_else(|| {
+                problem
+                    .design_variables
+                    .iter()
+                    .find(|d| d.name == n)
+                    .map(|d| d.unit.clone())
+            })
+    };
+    let unit_of_output = |n: &str| {
+        problem
+            .objectives
+            .iter()
+            .find(|o| o.variable == n)
+            .map(|o| o.unit.clone())
+            .or_else(|| {
+                problem
+                    .constraints
+                    .iter()
+                    .find(|c| c.variable == n)
+                    .map(|c| c.unit.clone())
+            })
+            .or_else(|| {
+                problem
+                    .unknowns
+                    .iter()
+                    .find(|u| u.name == n)
+                    .map(|u| u.unit.clone())
+            })
+    };
+    let mut out = vec![];
+    for a in problem
+        .attachments
+        .iter()
+        .filter(|a| a.media_type.contains("csv"))
+    {
+        let text = std::fs::read_to_string(&a.location).map_err(|e| {
+            SimorphError::Io(format!("attachment `{}` ({}): {e}", a.name, a.location))
+        })?;
+        if let Some(expected) = &a.sha256 {
+            let got = simorph_core::hashing::sha256_hex(text.as_bytes());
+            if &got != expected {
+                return Err(SimorphError::Validation(format!(
+                    "attachment `{}`: sha256 mismatch",
+                    a.name
+                )));
+            }
+        }
+        let mut lines = text
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'));
+        let header: Vec<(String, Option<String>)> = lines
+            .next()
+            .ok_or_else(|| SimorphError::InvalidInput(format!("attachment `{}` is empty", a.name)))?
+            .split(',')
+            .map(|h| {
+                let h = h.trim();
+                match (h.find('['), h.rfind(']')) {
+                    (Some(i), Some(j)) if j > i => (
+                        h[..i].trim().to_string(),
+                        Some(h[i + 1..j].trim().to_string()),
+                    ),
+                    _ => (h.to_string(), None),
+                }
+            })
+            .collect();
+        for line in lines {
+            let cells: Vec<f64> = line
+                .split(',')
+                .map(|c| {
+                    c.trim().parse::<f64>().map_err(|_| {
+                        SimorphError::InvalidInput(format!(
+                            "attachment `{}`: non-numeric cell `{c}`",
+                            a.name
+                        ))
+                    })
+                })
+                .collect::<Result<_>>()?;
+            if cells.len() != header.len() {
+                return Err(SimorphError::InvalidInput(format!(
+                    "attachment `{}`: row has {} cells, header {}",
+                    a.name,
+                    cells.len(),
+                    header.len()
+                )));
+            }
+            let mut inputs = IndexMap::new();
+            let mut observed: Vec<(String, f64)> = vec![];
+            let mut stds: IndexMap<String, f64> = IndexMap::new();
+            for ((name, unit), v) in header.iter().zip(&cells) {
+                if let Some(base) = name.strip_suffix("_std") {
+                    let pu = unit_of_output(base).ok_or_else(|| {
+                        SimorphError::InvalidInput(format!(
+                            "`{name}`: `{base}` is not an output of the problem"
+                        ))
+                    })?;
+                    let factor = match unit {
+                        Some(u) => {
+                            simorph_units::convert(1.0, u, &pu)?
+                                - simorph_units::convert(0.0, u, &pu)?
+                        }
+                        None => 1.0,
+                    };
+                    stds.insert(base.to_string(), (v * factor).abs());
+                } else if let Some(pu) = unit_of_input(name) {
+                    let val = match unit {
+                        Some(u) => simorph_units::convert(*v, u, &pu)?,
+                        None => *v,
+                    };
+                    inputs.insert(name.clone(), val);
+                } else if let Some(pu) = unit_of_output(name) {
+                    let val = match unit {
+                        Some(u) => simorph_units::convert(*v, u, &pu)?,
+                        None => *v,
+                    };
+                    observed.push((name.clone(), val));
+                } else {
+                    return Err(SimorphError::InvalidInput(format!("attachment `{}`: column `{name}` is neither an input nor an output of the problem", a.name)));
+                }
+            }
+            for (name, value) in observed {
+                let std = *stds.get(&name).ok_or_else(|| {
+                    SimorphError::InvalidInput(format!(
+                        "attachment `{}`: observation `{name}` has no `{name}_std` column",
+                        a.name
+                    ))
+                })?;
+                out.push(Observation {
+                    inputs: inputs.clone(),
+                    output: name,
+                    value,
+                    std,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub struct CampaignRuntime {
     pub problem: ProblemSpec,
     pub components: ComponentSet,
     pub ledger: Ledger,
     pub observations: Vec<Observation>,
+    /// Why the attached observations could not be loaded (reported by the
+    /// calibration experiment instead of being silently dropped).
+    pub observation_error: Option<String>,
     pub seed: u64,
     /// Optional archive of experiment records (enables reproduction by id).
     pub archive: Option<simorph_experiment::ExperimentArchive>,
@@ -71,11 +227,16 @@ pub struct CampaignRuntime {
 
 impl CampaignRuntime {
     pub fn new(problem: ProblemSpec, components: ComponentSet, ledger: Ledger) -> Self {
+        let (observations, observation_error) = match load_observations(&problem) {
+            Ok(o) => (o, None),
+            Err(e) => (vec![], Some(e.to_string())),
+        };
         Self {
             problem,
             components,
             ledger,
-            observations: vec![],
+            observations,
+            observation_error,
             seed: 42,
             archive: None,
             best_screening: IndexMap::new(),
@@ -172,7 +333,9 @@ impl CampaignRuntime {
             ValidationTarget::Run { run_id: res.run_id },
             res,
             checks,
-            &[ReferenceOrigin::Analytic],
+            // No reference comparison is made per run, so no origin applies:
+            // the verdict can only confirm or lower the producer's claim.
+            &[],
             None,
             None,
         );
@@ -501,6 +664,34 @@ impl CampaignRuntime {
             d.low = lo;
             d.high = hi;
         }
+        // Constraint bounds and objective targets are declared in problem
+        // units; the optimiser compares them with raw port values, so they
+        // are converted into the producing port's unit (tolerances are
+        // differences: factor only, no offset).
+        for c in &mut spec.constraints {
+            if let Some(p) = m.output_schema.iter().find(|p| p.name == c.variable) {
+                if p.unit != c.unit {
+                    let b = simorph_units::convert(c.bound, &c.unit, &p.unit)?;
+                    let tol = c.tolerance
+                        * (simorph_units::convert(1.0, &c.unit, &p.unit)?
+                            - simorph_units::convert(0.0, &c.unit, &p.unit)?);
+                    c.bound = b;
+                    c.tolerance = tol.abs();
+                    c.unit = p.unit.clone();
+                }
+            }
+        }
+        for o in &mut spec.objectives {
+            if let (Some(p), Some(t)) = (
+                m.output_schema.iter().find(|p| p.name == o.variable),
+                o.target,
+            ) {
+                if p.unit != o.unit {
+                    o.target = Some(simorph_units::convert(t, &o.unit, &p.unit)?);
+                    o.unit = p.unit.clone();
+                }
+            }
+        }
         let problem = ComponentProblem::new(comp.as_ref(), &spec, base, ctl.clone())?;
         let cost = if m.resource_requirements.wall_time_s > 10.0 {
             EvaluationCost::Expensive
@@ -686,9 +877,12 @@ impl CampaignRuntime {
         ctl: &ExecutionControl,
     ) -> Result<ExperimentOutcome> {
         if self.observations.is_empty() {
-            return Err(SimorphError::InvalidInput(
-                "calibration planned but no observations supplied".into(),
-            ));
+            return Err(SimorphError::InvalidInput(match &self.observation_error {
+                Some(e) => {
+                    format!("calibration planned but the attached observations are unusable: {e}")
+                }
+                None => "calibration planned but no observations supplied".into(),
+            }));
         }
         let comp = self.component(planned.component)?;
         let m = comp.manifest().clone();
@@ -725,8 +919,79 @@ impl CampaignRuntime {
             &z,
             &[],
         );
+        let chi = checks::check_chi_square(&pred, &refv, &refs, 0.05);
+        // Empirical validation: only when predictions are statistically
+        // consistent with *observations* (bias z-test and χ² of residuals).
+        // The runs of this experiment are then re-classified with an
+        // empirical reference origin; nothing else is promoted.
+        if z.passed && chi.passed {
+            let ranges: Vec<String> = self
+                .observations
+                .first()
+                .map(|o| o.inputs.keys().cloned().collect::<Vec<_>>())
+                .unwrap_or_default()
+                .iter()
+                .map(|k| {
+                    let vals: Vec<f64> = self
+                        .observations
+                        .iter()
+                        .filter_map(|o| o.inputs.get(k).copied())
+                        .collect();
+                    format!(
+                        "{k} ∈ [{:.4e}, {:.4e}]",
+                        vals.iter().cloned().fold(f64::INFINITY, f64::min),
+                        vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                    )
+                })
+                .collect();
+            for r in &mut runs {
+                if r.error.is_some() {
+                    continue;
+                }
+                let pseudo = TaskResult {
+                    run_id: r.run_id,
+                    component: m.id,
+                    outputs: r
+                        .outputs
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::json!(v)))
+                        .collect(),
+                    metrics: IndexMap::new(),
+                    evidence: r.evidence,
+                    request_hash: String::new(),
+                    warnings: vec![],
+                    wall_time_ms: 0,
+                };
+                let mut c1 = z.clone();
+                c1.name = "reference_case:observations".into();
+                let rec = classify(
+                    ValidationTarget::Run { run_id: r.run_id },
+                    &pseudo,
+                    vec![c1, chi.clone()],
+                    &[ReferenceOrigin::Empirical],
+                    None,
+                    None,
+                );
+                let _ = self.ledger.record(
+                    ProvenanceKind::Validation,
+                    format!(
+                        "validation empirique de {} sur {}",
+                        m.name,
+                        ranges.join(", ")
+                    ),
+                    &rec,
+                    &[],
+                );
+                r.evidence = rec.verdict;
+                r.validation = Some(rec.id);
+            }
+        }
         let mut vars = IndexMap::new();
         vars.insert("z_score".into(), zscore.abs());
+        vars.insert(
+            "chi_square_passed".into(),
+            if chi.passed { 1.0 } else { 0.0 },
+        );
         vars.insert("observations".into(), pred.len() as f64);
         let gain = if z.passed { 2.0 } else { 0.5 };
         Ok(self.outcome(planned, runs, vars, gain, t0.elapsed().as_secs_f64()))

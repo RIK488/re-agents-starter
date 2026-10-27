@@ -111,7 +111,9 @@ impl Component for ArithmeticReasoner {
         let max_depth = req.get_f64("max_depth")? as usize;
         let task_depth = req.get_f64("task_depth")? as usize;
         let n = req.get_f64("n_tasks")? as usize;
-        let seed = req.get_f64("task_seed")? as u64;
+        // Request seed → independent task sample (genuine replication).
+        let seed = (req.get_f64("task_seed")? as u64)
+            ^ req.seed.unwrap_or(0).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let tasks: Vec<Expr> = (0..n).map(|_| Expr::random(&mut rng, task_depth)).collect();
         ctl.check()?;

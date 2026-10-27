@@ -10,6 +10,11 @@ use std::time::Instant;
 /// Solver statistics attached to every trajectory.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SolverStats {
+    /// Whether `max_error_estimate` is a real (local) error estimate.  Fixed-step
+    /// methods (Euler, RK4, implicit θ-methods) have none: their estimate is
+    /// reported as 0 with this flag false, and must not be read as "no error".
+    #[serde(default)]
+    pub error_estimated: bool,
     pub steps: u64,
     pub rejected_steps: u64,
     pub rhs_evals: u64,
@@ -110,16 +115,20 @@ impl<'a> Recorder<'a> {
 }
 
 fn sign_change(dir: EventDirection, a: f64, b: f64) -> bool {
-    if a == 0.0 || b == 0.0 || a.is_nan() || b.is_nan() {
-        // A value exactly at zero carries no sign information (this is what
-        // allows an event handler to reset a state onto the event surface
-        // without immediately re-triggering).
+    if a == 0.0 || a.is_nan() || b.is_nan() {
+        // A value exactly at zero at the *start* of a step carries no sign
+        // information (this is what allows an event handler to reset a state
+        // onto the event surface without immediately re-triggering, and what
+        // prevents a crossing that ended exactly on a step boundary from
+        // being detected twice).
         return false;
     }
+    // A step that *ends* exactly on the surface is a crossing (audit: such
+    // events used to be missed).
     match dir {
-        EventDirection::Any => a * b < 0.0,
-        EventDirection::Rising => a < 0.0 && b > 0.0,
-        EventDirection::Falling => a > 0.0 && b < 0.0,
+        EventDirection::Any => b == 0.0 || a * b < 0.0,
+        EventDirection::Rising => a < 0.0 && b >= 0.0,
+        EventDirection::Falling => a > 0.0 && b <= 0.0,
     }
 }
 
@@ -180,6 +189,11 @@ pub fn simulate(
     let mut h = opts.dt.min(opts.dt_max).min(t_end - t0);
     rec.push(t, &x);
     let mut accepted_since_record = 0usize;
+    // Fixed-step methods follow the grid t_k = t_grid0 + k·dt (no round-off
+    // accumulation, no sliver final step); the grid restarts after an event.
+    let fixed = !matches!(opts.solver, crate::integrators::Solver::Rk45);
+    let mut grid0 = t0;
+    let mut k_grid: u64 = 0;
 
     while t < t_end {
         ctl.check()?;
@@ -194,7 +208,16 @@ pub fn simulate(
                 "step size underflow at t={t} (h={h})"
             )));
         }
-        let h_try = h.min(t_end - t);
+        let h_try = if fixed {
+            let dt = opts.dt.min(opts.dt_max);
+            let mut target = grid0 + (k_grid + 1) as f64 * dt;
+            if target >= t_end || (t_end - target) <= 1e-9 * dt {
+                target = t_end;
+            }
+            target - t
+        } else {
+            h.min(t_end - t)
+        };
         let out = one_step(model, opts, t, &x, h_try, params, &mut work)?;
         if out.x_new.iter().any(|v| !v.is_finite()) {
             return Err(SimorphError::Numerical(format!(
@@ -219,9 +242,20 @@ pub fn simulate(
             };
             h = (h_try * fac).min(opts.dt_max);
         }
-        let mut t_new = t + h_try;
+        let mut t_new = if fixed {
+            let dt = opts.dt.min(opts.dt_max);
+            let target = grid0 + (k_grid + 1) as f64 * dt;
+            if target >= t_end || (t_end - target) <= 1e-9 * dt {
+                t_end
+            } else {
+                target
+            }
+        } else {
+            t + h_try
+        };
         let mut x_new = out.x_new;
 
+        let mut grid_reset = false;
         // Event detection.
         let mut fired: Option<(usize, f64, Vec<f64>)> = None;
         if ne > 0 {
@@ -279,6 +313,7 @@ pub fn simulate(
             }
             // Do not let the adaptive step grow across the discontinuity.
             h = h.min(opts.dt);
+            grid_reset = true;
         } else {
             std::mem::swap(&mut ev_start, &mut ev_end);
             accepted_since_record += 1;
@@ -289,6 +324,12 @@ pub fn simulate(
         }
         stats.steps += 1;
         stats.final_dt = h_try;
+        if grid_reset {
+            grid0 = t_new;
+            k_grid = 0;
+        } else {
+            k_grid += 1;
+        }
         t = t_new;
         x = x_new;
     }
@@ -296,6 +337,7 @@ pub fn simulate(
         rec.push(t, &x);
     }
     stats.rhs_evals = work.rhs_evals;
+    stats.error_estimated = !fixed;
     stats.newton_iters = work.newton_iters;
     stats.jacobian_evals = work.jacobian_evals;
     stats.wall_time_ms = start.elapsed().as_millis() as u64;

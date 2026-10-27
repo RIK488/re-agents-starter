@@ -73,9 +73,36 @@ impl Component for PythonComponent {
     }
 }
 
-/// Interpreter to use: `SIMORPH_PYTHON` if set, else `python3`.
+/// Interpreter to use, in order: `SIMORPH_PYTHON` if set; the workspace
+/// virtual environment `simorph/.venv/bin/python` (created by
+/// `scripts/setup-python.sh`, holds SciPy, SymPy, Z3, MuJoCo, …) if it
+/// exists; else `python3` from `PATH`.
 pub fn python_interpreter() -> String {
-    std::env::var("SIMORPH_PYTHON").unwrap_or_else(|_| "python3".to_string())
+    if let Ok(p) = std::env::var("SIMORPH_PYTHON") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
+    let venv = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.venv/bin/python");
+    if venv.exists() {
+        return venv.to_string_lossy().into_owned();
+    }
+    "python3".to_string()
+}
+
+/// Whether a Python module imports with the selected interpreter.  Returns
+/// the module version string (or "?") on success, a reason on failure.
+pub fn python_module_available(module: &str) -> std::result::Result<String, String> {
+    let code = format!("import {module} as m; print(getattr(m, '__version__', '?'))");
+    let out = std::process::Command::new(python_interpreter())
+        .args(["-I", "-c", &code])
+        .output()
+        .map_err(|e| format!("cannot run {}: {e}", python_interpreter()))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(format!("{module} unavailable: {}", String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap_or("")))
+    }
 }
 
 /// Check that the interpreter exists and that `numpy` imports.  Returns a

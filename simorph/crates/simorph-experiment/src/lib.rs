@@ -19,10 +19,13 @@ pub mod design;
 pub mod plan;
 pub mod runner;
 
-pub use analysis::{find_counter_example, rank_failure_causes, CauseScore, CounterExample};
+pub use analysis::{
+    find_counter_example, rank_failure_causes, search_counter_example, CauseScore, CounterExample,
+    CounterExampleSearch,
+};
 pub use archive::{ExperimentArchive, ProvenanceHook};
 pub use design::{Design, DesignKind, Factor};
 pub use plan::{
     ExperimentPlan, ExperimentRecord, OutputSummary, RunRecord, RunStatus, SuccessCriterion,
 };
-pub use runner::{reproduce, run_experiment, ReproductionReport};
+pub use runner::{non_finite_output, reproduce, run_experiment, ReproductionReport};

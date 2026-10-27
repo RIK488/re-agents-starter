@@ -94,7 +94,11 @@ impl Component for ClassifierEval {
                 "weights must have 6 entries".into(),
             ));
         }
-        let seed = req.get_f64("dataset_seed")? as u64;
+        // The request seed selects an independent sample of the same
+        // distribution, so repeated evaluations with different seeds are
+        // genuine replications (not identical repeats).
+        let seed = (req.get_f64("dataset_seed")? as u64)
+            ^ req.seed.unwrap_or(0).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         let n = req.get_f64("n_samples")? as usize;
         ctl.check()?;
         let (xs, ys) = dataset(seed, n);

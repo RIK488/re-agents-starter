@@ -124,7 +124,15 @@ impl Laboratory {
                 for (k, v) in &task.inputs {
                     req.inputs.insert(k.clone(), v.clone());
                 }
+                // A candidate may only set its own parameters: redefining an
+                // input of a sealed task would change the test that judges it.
                 for (k, v) in &cand.parameters {
+                    if task.inputs.contains_key(k) {
+                        return Err(SimorphError::Protected(format!(
+                            "candidate `{}` tries to redefine `{k}`, an input of sealed task `{}`",
+                            cand.name, task.name
+                        )));
+                    }
                     req.inputs.insert(k.clone(), v.clone());
                 }
                 match run_component(comp.as_ref(), &req, ctl) {
@@ -638,6 +646,116 @@ mod tests {
         assert!(!d[0].accepted(), "shallower must be rejected: {:?}", d[0]);
         assert!(d[1].accepted(), "deeper must be accepted: {:?}", d[1]);
         assert_eq!(lab.current().parameters["max_depth"], json!(6.0));
+    }
+
+    #[test]
+    fn candidate_cannot_redefine_sealed_task_inputs() {
+        let rid = ai::reasoner::ArithmeticReasoner::new().manifest().id;
+        let suite = SealedSuite::seal(EvaluationSuite {
+            name: "s".into(),
+            version: "1".into(),
+            tasks: vec![EvalTask {
+                name: "t".into(),
+                component: rid,
+                inputs: [
+                    ("task_depth".to_string(), json!(5)),
+                    ("n_tasks".to_string(), json!(50)),
+                    ("task_seed".to_string(), json!(1)),
+                ]
+                .into_iter()
+                .collect(),
+                seeds: vec![1],
+            }],
+            metrics: vec![MetricSpec {
+                name: "accuracy".into(),
+                output: "accuracy".into(),
+                kind: MetricKind::Quality,
+                higher_is_better: true,
+                protected: true,
+                regression_tolerance: 0.0,
+            }],
+        })
+        .unwrap();
+        let policy = AcceptancePolicy {
+            primary_metric: "accuracy".into(),
+            min_relative_improvement: 0.0,
+            min_z_score: 0.0,
+            min_evidence: EvidenceLevel::Computed,
+        };
+        let cheat = Candidate::new(
+            "cheat",
+            [
+                ("max_depth".to_string(), json!(1)),
+                ("task_depth".to_string(), json!(0)),
+            ]
+            .into_iter()
+            .collect(),
+            "make the task trivial",
+        );
+        let lab = Laboratory::new(
+            suite,
+            policy,
+            resolver(),
+            cheat.clone(),
+            Ledger::in_memory(),
+        )
+        .unwrap();
+        assert!(matches!(
+            lab.evaluate(&cheat, &ExecutionControl::default()),
+            Err(SimorphError::Protected(_))
+        ));
+    }
+
+    #[test]
+    fn replications_are_independent_samples() {
+        let eval_id = ai::classifier::ClassifierEval::new().manifest().id;
+        let suite = SealedSuite::seal(EvaluationSuite {
+            name: "c".into(),
+            version: "1".into(),
+            tasks: vec![EvalTask {
+                name: "h".into(),
+                component: eval_id,
+                inputs: [
+                    ("dataset_seed".to_string(), json!(99)),
+                    ("n_samples".to_string(), json!(500)),
+                ]
+                .into_iter()
+                .collect(),
+                seeds: vec![1, 2, 3, 4],
+            }],
+            metrics: vec![MetricSpec {
+                name: "accuracy".into(),
+                output: "accuracy".into(),
+                kind: MetricKind::Quality,
+                higher_is_better: true,
+                protected: true,
+                regression_tolerance: 0.0,
+            }],
+        })
+        .unwrap();
+        let policy = AcceptancePolicy {
+            primary_metric: "accuracy".into(),
+            min_relative_improvement: 0.0,
+            min_z_score: 0.0,
+            min_evidence: EvidenceLevel::Computed,
+        };
+        let c = Candidate::new(
+            "w",
+            [(
+                "weights".to_string(),
+                json!([0.1, 0.5, -0.3, 0.2, 0.4, 0.4]),
+            )]
+            .into_iter()
+            .collect(),
+            "h",
+        );
+        let lab =
+            Laboratory::new(suite, policy, resolver(), c.clone(), Ledger::in_memory()).unwrap();
+        let e = lab.evaluate(&c, &ExecutionControl::default()).unwrap();
+        assert!(
+            e.metrics["accuracy"].std > 0.0,
+            "seeds must give different samples"
+        );
     }
 
     #[test]

@@ -1,0 +1,19 @@
+[package]
+name = "simorph-multimodal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH multimodal assets: images, audio, video (ffmpeg), geometry (STL mass properties), text quantity extraction — each exposed as a Component producing unit-checked Quantities."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-units = { path = "../simorph-units" }
+simorph-plugin-sdk = { path = "../simorph-plugin-sdk" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "pnm"] }
+hound = "3.5"
+rustfft = "6"
+regex = "1"
+unicode-normalization = "0.1"

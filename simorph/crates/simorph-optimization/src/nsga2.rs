@@ -109,8 +109,7 @@ pub fn crowding_distance(evals: &[Evaluation], front: &[usize]) -> Vec<f64> {
         let mut order: Vec<usize> = (0..m).collect();
         order.sort_by(|&a, &b| {
             evals[front[a]].objectives[obj]
-                .partial_cmp(&evals[front[b]].objectives[obj])
-                .unwrap()
+                .total_cmp(&evals[front[b]].objectives[obj])
         });
         dist[order[0]] = f64::INFINITY;
         dist[order[m - 1]] = f64::INFINITY;
@@ -175,11 +174,43 @@ fn polynomial_mutation<R: rand::Rng>(x: &mut [f64], bounds: &[(f64, f64)], eta: 
     }
 }
 
-/// NSGA-II (Deb et al. 2002).
+/// NSGA-II (Deb et al. 2002), limited only by `opts.generations`.
 pub fn nsga2(
     p: &dyn ObjectiveFunction,
     opts: &Nsga2Options,
     seed: u64,
+    ctl: &ExecutionControl,
+) -> Result<ParetoResult> {
+    nsga2_budgeted(p, opts, seed, usize::MAX, ctl)
+}
+
+/// NSGA-II with a hard evaluation budget: a generation is only started when
+/// its whole offspring population fits in `max_evaluations`, so the number
+/// of objective calls never exceeds the budget (audit: NSGA-II had no
+/// evaluation budget at all).  NaN objectives/constraints are treated as
+/// `+∞` (worst) so they cannot sit, undominated, in the front.
+pub fn nsga2_budgeted(
+    p: &dyn ObjectiveFunction,
+    opts: &Nsga2Options,
+    seed: u64,
+    max_evaluations: usize,
+    ctl: &ExecutionControl,
+) -> Result<ParetoResult> {
+    let n = opts.population.max(4);
+    if max_evaluations < n {
+        return Err(SimorphError::InvalidInput(format!(
+            "NSGA-II: evaluation budget {max_evaluations} is smaller than the population {n}"
+        )));
+    }
+    let guard = crate::problem::BudgetGuard::new(p, max_evaluations);
+    nsga2_impl(&guard, opts, seed, max_evaluations, ctl)
+}
+
+fn nsga2_impl(
+    p: &dyn ObjectiveFunction,
+    opts: &Nsga2Options,
+    seed: u64,
+    max_evaluations: usize,
     ctl: &ExecutionControl,
 ) -> Result<ParetoResult> {
     let d = check_dim(p)?;
@@ -197,6 +228,9 @@ pub fn nsga2(
     let mut gens = 0;
     for _ in 0..opts.generations {
         ctl.check()?;
+        if c.count().saturating_add(n) > max_evaluations {
+            break;
+        }
         gens += 1;
         // ranks and crowding for tournament
         let fronts = non_dominated_sort(&evals);
@@ -249,7 +283,7 @@ pub fn nsga2(
             } else {
                 let cd = crowding_distance(&comb_e, &f);
                 let mut order: Vec<usize> = (0..f.len()).collect();
-                order.sort_by(|&a, &b| cd[b].partial_cmp(&cd[a]).unwrap());
+                order.sort_by(|&a, &b| cd[b].total_cmp(&cd[a]));
                 for &k in order.iter().take(n - new_idx.len()) {
                     new_idx.push(f[k]);
                 }
@@ -282,18 +316,29 @@ pub fn nsga2(
 }
 
 /// Hypervolume dominated by `points` (minimisation) w.r.t. `reference`.
-/// Exact for 2 objectives; Monte Carlo with `mc_samples` for more.
+/// Exact for 1 and 2 objectives; Monte Carlo with `mc_samples` (0 means
+/// 10 000) for more.  Points with a non-finite coordinate are ignored, and a
+/// degenerate box (zero width in some objective) has hypervolume 0 (audit:
+/// the Monte Carlo branch panicked on an empty sampling range and returned
+/// NaN for `mc_samples = 0`).
 pub fn hypervolume(points: &[Vec<f64>], reference: &[f64], mc_samples: usize, seed: u64) -> f64 {
     let pts: Vec<&Vec<f64>> = points
         .iter()
-        .filter(|p| p.iter().zip(reference).all(|(a, r)| a <= r))
+        .filter(|p| {
+            p.len() >= reference.len()
+                && p.iter().zip(reference).all(|(a, r)| a.is_finite() && a <= r)
+        })
         .collect();
-    if pts.is_empty() {
+    if pts.is_empty() || reference.is_empty() {
         return 0.0;
+    }
+    if reference.len() == 1 {
+        let m = pts.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+        return reference[0] - m;
     }
     if reference.len() == 2 {
         let mut s: Vec<&Vec<f64>> = pts.clone();
-        s.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap());
+        s.sort_by(|a, b| a[0].total_cmp(&b[0]));
         let mut hv = 0.0;
         let mut prev_f2 = reference[1];
         for p in s {
@@ -310,6 +355,10 @@ pub fn hypervolume(points: &[Vec<f64>], reference: &[f64], mc_samples: usize, se
         .map(|j| pts.iter().map(|p| p[j]).fold(f64::INFINITY, f64::min))
         .collect();
     let vol: f64 = (0..k).map(|j| reference[j] - lo[j]).product();
+    if !(vol > 0.0) {
+        return 0.0;
+    }
+    let mc_samples = if mc_samples == 0 { 10_000 } else { mc_samples };
     let mut rng = seeded(seed);
     let mut hits = 0usize;
     for _ in 0..mc_samples {
@@ -342,8 +391,12 @@ mod tests {
         .unwrap();
         let pts: Vec<Vec<f64>> = r.front.iter().map(|q| q.objectives.clone()).collect();
         let hv = hypervolume(&pts, &[1.1, 1.1], 0, 0);
-        // exact hypervolume of the true front f2 = 1 - sqrt(f1) w.r.t. (1.1, 1.1) is 1.1*1.1 - ∫0^1 (1-sqrt f1) df1 - 0.1*1 ... = 1.21 - (1 - 2/3) - 0.1 = 0.7767
-        let ideal = 1.21 - (1.0 - 2.0 / 3.0) - 0.1;
+        // exact hypervolume of the true front f2 = 1 - sqrt(f1), f1 ∈ [0,1],
+        // w.r.t. (1.1, 1.1):  ∫0^1 (1.1 - (1 - √f1)) df1 + 0.1·1.1
+        //                   = 0.1 + 2/3 + 0.11 = 0.87667
+        // (audit: the constant used before, 0.7767, was 0.11 too low and
+        // made the 96 % criterion pass for a front at 85 % of the ideal).
+        let ideal = 0.1 + 2.0 / 3.0 + 0.11;
         assert!(hv > 0.96 * ideal, "hv={hv} ideal={ideal}");
         assert!(r.front.len() > 50);
         // every front point is close to the true front

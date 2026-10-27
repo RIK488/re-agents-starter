@@ -326,9 +326,20 @@ pub fn run(
     let mut h = opts.macro_step;
     let mut since_record = 0usize;
     let mut iters = 0u64;
+    // Without step doubling the macro grid is t0 + k·h (no round-off drift).
+    let mut k_grid: u64 = 0;
     while t < opts.t_end - 1e-12 * opts.t_end.abs().max(1.0) {
         ctl.check()?;
-        let h_try = h.min(opts.t_end - t);
+        let h_try = if opts.step_doubling.is_none() {
+            let target = opts.t0 + (k_grid + 1) as f64 * opts.macro_step;
+            if target >= opts.t_end || opts.t_end - target <= 1e-9 * opts.macro_step {
+                opts.t_end - t
+            } else {
+                target - t
+            }
+        } else {
+            h.min(opts.t_end - t)
+        };
         match opts.step_doubling {
             None => {
                 one_macro_step(c, &mut cache, t, h_try, opts, &mut iters)?;
@@ -372,13 +383,31 @@ pub fn run(
                 }
             }
         }
-        t += h_try;
+        if opts.step_doubling.is_none() {
+            k_grid += 1;
+            let target = opts.t0 + k_grid as f64 * opts.macro_step;
+            t = if target >= opts.t_end || opts.t_end - target <= 1e-9 * opts.macro_step {
+                opts.t_end
+            } else {
+                target
+            };
+        } else {
+            t += h_try;
+            if opts.t_end - t <= 1e-12 * opts.t_end.abs().max(1.0) {
+                t = opts.t_end;
+            }
+        }
         traj.macro_steps += 1;
         since_record += 1;
         if since_record >= opts.record_every || t >= opts.t_end {
             record(&mut traj, t, &cache);
             since_record = 0;
         }
+    }
+    // The final state is always recorded (audit: dropped with record_every > 1
+    // when accumulated time stopped just short of t_end).
+    if traj.times.last().copied() != Some(t) {
+        record(&mut traj, t, &cache);
     }
     traj.fixed_point_iterations = iters;
     Ok(traj)

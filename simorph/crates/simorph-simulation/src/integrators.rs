@@ -127,12 +127,36 @@ impl SolverOptions {
     }
 }
 
-/// Work counters updated by every stepper.
-#[derive(Debug, Default, Clone, Copy)]
+/// Work counters updated by every stepper, plus the first-same-as-last
+/// (FSAL) cache of the Dormand–Prince pair.
+#[derive(Debug, Default, Clone)]
 pub struct Work {
     pub rhs_evals: u64,
     pub newton_iters: u64,
     pub jacobian_evals: u64,
+    /// Up to two cached derivative evaluations `(t, x, f(t, x))`: the first
+    /// stage of the last attempt (reused after a rejection) and the last
+    /// stage of the last attempt (reused as the first stage of the next
+    /// accepted step).
+    fsal: Vec<(f64, Vec<f64>, Vec<f64>)>,
+}
+
+impl Work {
+    fn cached(&self, t: f64, x: &[f64]) -> Option<&Vec<f64>> {
+        self.fsal
+            .iter()
+            .find(|(tc, xc, _)| *tc == t && xc.as_slice() == x)
+            .map(|(_, _, f)| f)
+    }
+    fn remember(&mut self, t: f64, x: &[f64], f: &[f64]) {
+        if self.cached(t, x).is_some() {
+            return;
+        }
+        if self.fsal.len() >= 2 {
+            self.fsal.remove(0);
+        }
+        self.fsal.push((t, x.to_vec(), f.to_vec()));
+    }
 }
 
 /// Result of one step attempt.
@@ -287,7 +311,15 @@ fn dopri5(
     let n = x.len();
     let mut k = vec![vec![0.0; n]; 7];
     let mut tmp = vec![0.0; n];
-    eval(m, t, x, &mut k[0], p, w)?;
+    // FSAL: the last stage of an accepted step is f(t+h, x_new), i.e. the
+    // first stage of the next step (6 evaluations per accepted step).
+    if let Some(f) = w.cached(t, x) {
+        k[0].copy_from_slice(f);
+    } else {
+        eval(m, t, x, &mut k[0], p, w)?;
+        let k0 = k[0].clone();
+        w.remember(t, x, &k0);
+    }
     for s in 1..7 {
         for i in 0..n {
             let mut acc = x[i];
@@ -315,6 +347,12 @@ fn dopri5(
         err += e * e;
     }
     let err = (err / n.max(1) as f64).sqrt();
+    // Stage 7 was evaluated at x + h Σ a_7j k_j, which equals x5 because the
+    // last row of A is b5; cache it only when the arithmetic is bit-identical.
+    if tmp == x_new {
+        let k6 = k[6].clone();
+        w.remember(t + h, &x_new, &k6);
+    }
     Ok(StepOutcome {
         x_new,
         err: Some(err),

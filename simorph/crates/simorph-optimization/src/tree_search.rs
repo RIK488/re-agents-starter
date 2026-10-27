@@ -109,7 +109,7 @@ pub fn mcts<P: DiscreteProblem>(
                         + exploration * (ln_n / nodes[a].visits.max(1e-9)).sqrt();
                     let ub = nodes[b].total / nodes[b].visits.max(1e-9)
                         + exploration * (ln_n / nodes[b].visits.max(1e-9)).sqrt();
-                    ua.partial_cmp(&ub).unwrap()
+                    ua.total_cmp(&ub)
                 })
                 .unwrap();
             let (_, r) = p.step(
@@ -158,7 +158,7 @@ pub fn mcts<P: DiscreteProblem>(
         let best = *nodes[node]
             .children
             .iter()
-            .max_by(|&&a, &&b| nodes[a].visits.partial_cmp(&nodes[b].visits).unwrap())
+            .max_by(|&&a, &&b| nodes[a].visits.total_cmp(&nodes[b].visits))
             .unwrap();
         let a = nodes[best].action_from_parent.clone().unwrap();
         let (s2, r) = p.step(&s, &a);
@@ -180,9 +180,8 @@ pub fn mcts<P: DiscreteProblem>(
             .max_by(|a, b| {
                 let (sa, ra) = p.step(&s, a);
                 let (sb, rb) = p.step(&s, b);
-                (ra + p.heuristic(&sa))
-                    .partial_cmp(&(rb + p.heuristic(&sb)))
-                    .unwrap()
+                // NaN scores rank lowest instead of panicking (audit)
+                nan_low(ra + p.heuristic(&sa)).total_cmp(&nan_low(rb + p.heuristic(&sb)))
             })
             .unwrap()
             .clone();
@@ -201,6 +200,15 @@ pub fn mcts<P: DiscreteProblem>(
         total_reward: total,
         simulations: iterations,
     })
+}
+
+/// Map NaN to −∞ so that it ranks below every real score.
+fn nan_low(v: f64) -> f64 {
+    if v.is_nan() {
+        f64::NEG_INFINITY
+    } else {
+        v
+    }
 }
 
 /// Beam search keeping the `width` best partial solutions by
@@ -234,9 +242,7 @@ pub fn beam_search<P: DiscreteProblem>(
             break;
         }
         next.sort_by(|a, b| {
-            (b.2 + p.heuristic(&b.0))
-                .partial_cmp(&(a.2 + p.heuristic(&a.0)))
-                .unwrap()
+            nan_low(b.2 + p.heuristic(&b.0)).total_cmp(&nan_low(a.2 + p.heuristic(&a.0)))
         });
         next.truncate(width.max(1));
         beam = next;
@@ -290,7 +296,7 @@ mod tests {
         fn heuristic(&self, s: &Self::State) -> f64 {
             // fractional knapsack bound on remaining items
             let mut rem: Vec<(f64, f64)> = self.items[s.0..].to_vec();
-            rem.sort_by(|a, b| (b.0 / b.1).partial_cmp(&(a.0 / a.1)).unwrap());
+            rem.sort_by(|a, b| (b.0 / b.1).total_cmp(&(a.0 / a.1)));
             let mut cap = self.capacity - s.1;
             let mut v = 0.0;
             for (val, w) in rem {

@@ -36,12 +36,10 @@ pub fn deb_compare(a: &Evaluation, b: &Evaluation) -> Ordering {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
         (true, true) => a.objectives[0]
-            .partial_cmp(&b.objectives[0])
-            .unwrap_or(Ordering::Equal),
+            .total_cmp(&b.objectives[0]),
         (false, false) => a
             .violation()
-            .partial_cmp(&b.violation())
-            .unwrap_or(Ordering::Equal),
+            .total_cmp(&b.violation()),
     }
 }
 

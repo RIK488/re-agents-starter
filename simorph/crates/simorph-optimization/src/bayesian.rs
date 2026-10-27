@@ -138,6 +138,22 @@ fn erf(x: f64) -> f64 {
 }
 
 /// Expected improvement for minimisation.
+/// Training targets for the GP: non-finite observations (failed or NaN
+/// evaluations, mapped to `+∞` by the budget guard) are replaced by the worst
+/// finite value plus its spread, so the surrogate stays well defined instead
+/// of producing NaN predictions (audit).
+fn surrogate_targets(ys: &[f64]) -> Vec<f64> {
+    let fin: Vec<f64> = ys.iter().copied().filter(|v| v.is_finite()).collect();
+    if fin.len() == ys.len() {
+        return ys.to_vec();
+    }
+    let (lo, hi) = fin
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| (a.min(v), b.max(v)));
+    let worst = if fin.is_empty() { 1.0 } else { hi + (hi - lo).max(1.0) };
+    ys.iter().map(|&v| if v.is_finite() { v } else { worst }).collect()
+}
+
 pub fn expected_improvement(mean: f64, var: f64, best: f64, xi: f64) -> f64 {
     let sd = var.sqrt();
     if sd < 1e-12 {
@@ -171,6 +187,15 @@ impl Default for BoOptions {
 /// Bayesian optimisation: LHS initial design, GP surrogate, EI maximised by
 /// random multistart followed by local coordinate refinement.
 pub fn bayesian_optimization(
+    p: &dyn ObjectiveFunction,
+    opts: &BoOptions,
+    budget: &Budget,
+    ctl: &ExecutionControl,
+) -> Result<OptimizationResult> {
+    crate::problem::guarded(p, budget, Method::BayesianOptimization, |g| bayesian_optimization_impl(g, opts, budget, ctl))
+}
+
+fn bayesian_optimization_impl(
     p: &dyn ObjectiveFunction,
     opts: &BoOptions,
     budget: &Budget,
@@ -214,7 +239,7 @@ pub fn bayesian_optimization(
             evaluations: c.count(),
             best_f: best,
         });
-        let gp = GaussianProcess::fit(opts.kernel, &xs_unit, &ys)?;
+        let gp = GaussianProcess::fit(opts.kernel, &xs_unit, &surrogate_targets(&ys))?;
         let ei = |u: &[f64]| {
             let (m, v) = gp.predict(u);
             expected_improvement(m, v, best, opts.xi)
@@ -262,7 +287,7 @@ pub fn bayesian_optimization(
         ys.push(y);
     }
     let bi = (0..ys.len())
-        .min_by(|&a, &b| ys[a].partial_cmp(&ys[b]).unwrap())
+        .min_by(|&a, &b| ys[a].total_cmp(&ys[b]))
         .unwrap();
     let best_x = from_unit(&xs_unit[bi]);
     let best_eval = p.evaluate(&best_x)?;

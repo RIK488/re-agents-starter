@@ -1,0 +1,25 @@
+[package]
+name = "simorph-distributed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH distributed execution: TCP coordinator/worker protocol with HMAC authentication, resource-aware placement, heartbeats, failover, de-duplication, cancellation, back-pressure and metrics."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-plugin-sdk = { path = "../simorph-plugin-sdk" }
+simorph-plugin-engineering = { path = "../../plugins/engineering" }
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+rand.workspace = true
+sha2.workspace = true
+hex.workspace = true
+clap.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
+hmac.workspace = true
+
+[[bin]]
+name = "simorph-worker"
+path = "src/bin/worker.rs"

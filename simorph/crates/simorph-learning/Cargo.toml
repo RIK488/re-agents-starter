@@ -1,0 +1,16 @@
+[package]
+name = "simorph-learning"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Native, deterministic machine learning for SIMORPH: dense MLPs with backpropagation (Adam/SGD), surrogate components, reinforcement learning (CartPole, Pendulum, REINFORCE, PPO) and an optional PyTorch backend."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_distr.workspace = true

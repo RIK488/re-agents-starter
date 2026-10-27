@@ -48,7 +48,17 @@ fn execute_point(
     };
     let start = Instant::now();
     let (status, result) = match run_component(component, &req, &ctl) {
-        Ok(r) => (RunStatus::Success, Some(r)),
+        Ok(r) => match non_finite_output(&r) {
+            // NaN/inf become JSON null: such a run did not succeed (audit:
+            // NaN runs were counted as successes and dropped from summaries).
+            Some(name) => (
+                RunStatus::Failed {
+                    error: format!("non-finite output `{name}`"),
+                },
+                Some(r),
+            ),
+            None => (RunStatus::Success, Some(r)),
+        },
         Err(SimorphError::Cancelled) => (RunStatus::Cancelled, None),
         Err(SimorphError::Timeout(_)) => (RunStatus::TimedOut, None),
         Err(e) => (
@@ -69,11 +79,32 @@ fn execute_point(
     }
 }
 
+/// Name of the first output that is non-finite (JSON null, or a null
+/// element inside an array/object), if any.
+pub fn non_finite_output(r: &simorph_core::TaskResult) -> Option<String> {
+    fn bad(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::Null => true,
+            serde_json::Value::Number(n) => n.as_f64().map(|x| !x.is_finite()).unwrap_or(true),
+            serde_json::Value::Array(a) => a.iter().any(bad),
+            serde_json::Value::Object(o) => o.values().any(bad),
+            _ => false,
+        }
+    }
+    r.outputs
+        .iter()
+        .find(|(_, v)| bad(v))
+        .map(|(k, _)| k.clone())
+}
+
 fn evaluate_criterion(
     c: &SuccessCriterion,
     runs: &[RunRecord],
     summary: Option<&OutputSummary>,
 ) -> bool {
+    // Summary statistics are computed over successful runs only; failed
+    // runs (including non-finite outputs) are accounted for by
+    // `fraction_ok` criteria.
     let value = match c.statistic.as_str() {
         "mean" => summary.map(|s| s.mean),
         "max" => summary.map(|s| s.max),
@@ -129,7 +160,11 @@ pub fn run_experiment(
         }
     }
     for name in names {
-        let vals: Vec<f64> = runs.iter().filter_map(|r| r.output_f64(&name)).collect();
+        let vals: Vec<f64> = runs
+            .iter()
+            .filter(|r| r.is_success())
+            .filter_map(|r| r.output_f64(&name))
+            .collect();
         if let Some(s) = OutputSummary::of(&vals) {
             summaries.insert(name, s);
         }
@@ -179,14 +214,43 @@ pub struct ReproductionReport {
     pub max_relative_deviation: f64,
     /// Runs whose status differs between original and reproduction.
     pub status_mismatches: Vec<usize>,
+    /// Runs whose output keys or array shapes differ.
+    #[serde(default)]
+    pub structure_mismatches: Vec<usize>,
 }
 
 impl ReproductionReport {
     pub fn bitwise_identical(&self) -> bool {
-        self.hash_equal.iter().all(|&b| b) && self.status_mismatches.is_empty()
+        self.hash_equal.iter().all(|&b| b)
+            && self.status_mismatches.is_empty()
+            && self.structure_mismatches.is_empty()
     }
     pub fn within(&self, rtol: f64) -> bool {
-        self.status_mismatches.is_empty() && self.max_relative_deviation <= rtol
+        self.status_mismatches.is_empty()
+            && self.structure_mismatches.is_empty()
+            && self.max_relative_deviation <= rtol
+    }
+}
+
+/// Structural signature: keys and array lengths, recursively.
+fn shape(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Array(a) => format!(
+            "[{}:{}]",
+            a.len(),
+            a.iter().map(shape).collect::<Vec<_>>().join(",")
+        ),
+        serde_json::Value::Object(o) => format!(
+            "{{{}}}",
+            o.iter()
+                .map(|(k, x)| format!("{k}={}", shape(x)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        serde_json::Value::Number(_) => "n".into(),
+        serde_json::Value::String(_) => "s".into(),
+        serde_json::Value::Bool(_) => "b".into(),
+        serde_json::Value::Null => "0".into(),
     }
 }
 
@@ -213,6 +277,10 @@ pub fn reproduce(
     let mut hash_equal = vec![];
     let mut max_dev: f64 = 0.0;
     let mut status_mismatches = vec![];
+    let mut structure_mismatches = vec![];
+    if record.runs.len() != fresh.runs.len() {
+        structure_mismatches.push(usize::MAX);
+    }
     for (old, new) in record.runs.iter().zip(fresh.runs.iter()) {
         let same_status =
             std::mem::discriminant(&old.status) == std::mem::discriminant(&new.status);
@@ -222,6 +290,19 @@ pub fn reproduce(
         match (&old.result, &new.result) {
             (Some(a), Some(b)) => {
                 hash_equal.push(a.output_hash() == b.output_hash());
+                let sa: Vec<(String, String)> = a
+                    .outputs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), shape(v)))
+                    .collect();
+                let sb: Vec<(String, String)> = b
+                    .outputs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), shape(v)))
+                    .collect();
+                if sa != sb {
+                    structure_mismatches.push(old.index);
+                }
                 let (mut la, mut lb) = (vec![], vec![]);
                 for (k, va) in &a.outputs {
                     if let Some(vb) = b.outputs.get(k) {
@@ -247,5 +328,6 @@ pub fn reproduce(
         hash_equal,
         max_relative_deviation: max_dev,
         status_mismatches,
+        structure_mismatches,
     })
 }

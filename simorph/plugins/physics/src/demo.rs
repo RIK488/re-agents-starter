@@ -1,6 +1,7 @@
 //! Ready-made nanosatellite coupling: orbit → eclipse → solar power →
-//! battery, with the solar array heating one node of a two-node thermal
-//! network and an attitude slave running alongside.
+//! battery; the non-converted absorbed sunlight heats the array node of a
+//! two-node thermal network whose capacity and radiating area scale with the
+//! array area; an attitude slave runs alongside.
 //!
 //! Signal names recorded by the master: `orbit.eclipse`, `orbit.altitude`,
 //! `solar.power`, `battery.soc`, `battery.voltage`, `thermal.temperature_0`,
@@ -70,10 +71,12 @@ pub fn nanosat_coupling(p: &NanosatParams) -> Result<Coupling> {
     let thermal_params: Params = [
         ("T_env", 2.7),
         ("T_space", 2.7),
-        ("C_0", 400.0),
+        // Array node: areal heat capacity ~6.7 kJ/(K·m²) (cells + substrate).
+        ("C_0", 6700.0 * p.array_area),
         ("G_env_0", 0.0),
         ("T0_0", 290.0),
-        ("epsA_0", 0.06 * 0.85),
+        // Front face radiates to space: emissivity 0.85 × array area.
+        ("epsA_0", 0.85 * p.array_area),
         ("C_1", 3000.0),
         ("G_env_1", 0.0),
         ("T0_1", 293.0),
@@ -102,6 +105,8 @@ pub fn nanosat_coupling(p: &NanosatParams) -> Result<Coupling> {
         .connect("orbit.eclipse", "solar.eclipse")?
         .connect("thermal.temperature_0", "solar.temperature")?
         .connect("solar.power", "battery.power_in")?
-        .connect("solar.power", "thermal.heat_in_0")?
+        // The array is heated by absorbed sunlight *not* converted to
+        // electricity (energy conservation), not by the electrical output.
+        .connect("solar.heat", "thermal.heat_in_0")?
         .build()
 }

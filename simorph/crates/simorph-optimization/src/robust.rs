@@ -61,7 +61,7 @@ impl<F: Fn(&[f64], &[f64]) -> Result<f64> + Sync> ObjectiveFunction for RobustPr
             RobustCriterion::Expectation => vals.iter().sum::<f64>() / vals.len() as f64,
             RobustCriterion::WorstCase => vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
             RobustCriterion::Cvar { alpha } => {
-                vals.sort_by(|a, b| b.partial_cmp(a).unwrap());
+                vals.sort_by(|a, b| b.total_cmp(a));
                 let k = ((alpha * vals.len() as f64).ceil() as usize).clamp(1, vals.len());
                 vals[..k].iter().sum::<f64>() / k as f64
             }
@@ -88,7 +88,8 @@ pub fn robust_optimize<F: Fn(&[f64], &[f64]) -> Result<f64> + Sync>(
     )?;
     r.method = match p.criterion {
         RobustCriterion::Expectation => Method::RobustExpectation,
-        _ => Method::RobustCvar,
+        RobustCriterion::WorstCase => Method::RobustWorstCase,
+        RobustCriterion::Cvar { .. } => Method::RobustCvar,
     };
     Ok(r)
 }

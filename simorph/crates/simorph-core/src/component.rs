@@ -55,12 +55,15 @@ impl CancellationToken {
 #[derive(Debug, Clone, Copy)]
 pub struct Deadline {
     pub at: Instant,
+    /// Configured duration (reported in timeout errors).
+    pub budget: Duration,
 }
 
 impl Deadline {
     pub fn after(d: Duration) -> Self {
         Self {
             at: Instant::now() + d,
+            budget: d,
         }
     }
     pub fn expired(&self) -> bool {
@@ -99,7 +102,7 @@ impl ExecutionControl {
         self.cancel.check()?;
         if let Some(d) = self.deadline {
             if d.expired() {
-                return Err(crate::SimorphError::Timeout(0));
+                return Err(crate::SimorphError::Timeout(d.budget.as_millis() as u64));
             }
         }
         Ok(())
@@ -175,11 +178,10 @@ impl TaskRequest {
             .inputs
             .get(name)
             .ok_or_else(|| crate::SimorphError::InvalidInput(format!("missing input `{name}`")))?;
-        v.as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_f64()).collect())
-            .ok_or_else(|| {
-                crate::SimorphError::InvalidInput(format!("input `{name}` is not an array"))
-            })
+        let a = v.as_array().ok_or_else(|| {
+            crate::SimorphError::InvalidInput(format!("input `{name}` is not an array"))
+        })?;
+        numeric_array(a, &format!("input `{name}`"))
     }
     /// Hash of everything that determines the output (for reproduction).
     pub fn content_hash(&self) -> String {
@@ -200,6 +202,21 @@ impl TaskRequest {
         })
         .expect("serialisable")
     }
+}
+
+/// Convert a JSON array to numbers; any non-numeric element is an error
+/// (silently dropping elements would shift indices and hide bad data).
+fn numeric_array(a: &[serde_json::Value], what: &str) -> Result<Vec<f64>> {
+    a.iter()
+        .enumerate()
+        .map(|(i, x)| {
+            x.as_f64().ok_or_else(|| {
+                crate::SimorphError::InvalidInput(format!(
+                    "{what}: element {i} is not a number ({x})"
+                ))
+            })
+        })
+        .collect()
 }
 
 /// Outputs of a task.
@@ -253,13 +270,14 @@ impl TaskResult {
             })
     }
     pub fn get_vec_f64(&self, name: &str) -> Result<Vec<f64>> {
-        self.outputs
+        let a = self
+            .outputs
             .get(name)
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_f64()).collect())
             .ok_or_else(|| {
                 crate::SimorphError::InvalidInput(format!("missing array output `{name}`"))
-            })
+            })?;
+        numeric_array(a, &format!("output `{name}`"))
     }
     /// Hash of the outputs (used to check reproducibility).
     pub fn output_hash(&self) -> String {
@@ -304,6 +322,17 @@ pub trait Component: Send + Sync {
             match req.inputs.get(&p.name) {
                 None => reasons.push(format!("missing input `{}`", p.name)),
                 Some(v) => {
+                    // A scalar port with a physical unit or a declared range
+                    // expects a number: a string there is a type error.
+                    if p.shape.is_empty()
+                        && (p.range.is_some() || p.unit.trim() != "1")
+                        && (v.is_string() || v.is_object())
+                    {
+                        reasons.push(format!(
+                            "input `{}` must be a number [{}], got {}",
+                            p.name, p.unit, v
+                        ));
+                    }
                     if let (Some(x), Some((lo, hi))) = (v.as_f64(), p.range) {
                         if x < lo || x > hi {
                             reasons.push(format!(
@@ -419,5 +448,30 @@ mod tests {
         assert!(ctl.check().is_ok());
         ctl.cancel.cancel();
         assert!(matches!(ctl.check(), Err(crate::SimorphError::Cancelled)));
+    }
+
+    #[test]
+    fn audit_vec_inputs_reject_non_numeric_and_strings_on_numeric_ports() {
+        let id = ComponentId::new();
+        let req = TaskRequest::new(id).input("v", serde_json::json!([1, "a", 2]));
+        assert!(req.get_vec_f64("v").is_err());
+        let d = Doubler {
+            m: ComponentManifest::in_process("doubler", "1", "t")
+                .with_inputs(vec![Port::scalar("x", "m").with_range(0.0, 10.0)])
+                .with_outputs(vec![Port::scalar("y", "1")]),
+        };
+        let bad = TaskRequest::new(d.m.id).input("x", "3");
+        let c = d.check_compatibility(&bad);
+        assert!(!c.compatible && c.reasons[0].contains("must be a number"));
+    }
+
+    #[test]
+    fn audit_timeout_reports_configured_duration() {
+        let ctl = ExecutionControl::with_timeout(Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(5));
+        match ctl.check() {
+            Err(crate::SimorphError::Timeout(ms)) => assert_eq!(ms, 1),
+            other => panic!("{other:?}"),
+        }
     }
 }

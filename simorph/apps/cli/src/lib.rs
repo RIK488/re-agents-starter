@@ -8,14 +8,21 @@
 
 pub mod actions;
 pub mod bench;
+pub mod cluster;
+pub mod discover;
 pub mod examples;
 pub mod factories;
+pub mod formal;
+pub mod improve;
 pub mod lab;
 pub mod registry;
 pub mod workspace;
 
 pub use actions::*;
+pub use discover::*;
 pub use factories::*;
+pub use formal::*;
+pub use improve::*;
 pub use registry::*;
 pub use workspace::*;
 
@@ -24,6 +31,7 @@ pub use workspace::*;
 pub fn implemented_action_ids() -> Vec<&'static str> {
     vec![
         "components.list",
+        "components.capabilities",
         "components.show",
         "units.convert",
         "units.check",
@@ -52,5 +60,8 @@ pub fn implemented_action_ids() -> Vec<&'static str> {
         "simulator.generate",
         "knowledge.memory",
         "knowledge.transfers",
+        "formal.check",
+        "improvement.run",
+        "discovery.run",
     ]
 }

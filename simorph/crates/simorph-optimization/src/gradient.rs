@@ -3,7 +3,17 @@
 use crate::problem::*;
 use simorph_core::{ExecutionControl, Result};
 
-fn grad(p: &dyn ObjectiveFunction, c: &Counted, x: &[f64], penalty: f64) -> Result<Vec<f64>> {
+/// Finite-difference gradient that never evaluates outside the bounds
+/// (audit: central differences at an active bound sampled infeasible points,
+/// which may be undefined for the model).  At a bound a one-sided difference
+/// is used.
+fn grad(
+    p: &dyn ObjectiveFunction,
+    c: &Counted,
+    x: &[f64],
+    bounds: &[(f64, f64)],
+    penalty: f64,
+) -> Result<Vec<f64>> {
     if p.n_constraints() == 0 {
         if let Some(g) = p.gradient(x) {
             return Ok(g);
@@ -11,13 +21,37 @@ fn grad(p: &dyn ObjectiveFunction, c: &Counted, x: &[f64], penalty: f64) -> Resu
     }
     let h = 1e-6;
     let mut g = vec![0.0; x.len()];
+    let mut f0: Option<f64> = None;
     for i in 0..x.len() {
-        let hi = h * x[i].abs().max(1.0);
+        let step = h * x[i].abs().max(1.0);
+        let (lo, hi) = bounds.get(i).copied().unwrap_or((f64::NEG_INFINITY, f64::INFINITY));
+        let up = x[i] + step <= hi;
+        let down = x[i] - step >= lo;
         let mut xp = x.to_vec();
         let mut xm = x.to_vec();
-        xp[i] += hi;
-        xm[i] -= hi;
-        g[i] = (c.eval_scalar(&xp, penalty)? - c.eval_scalar(&xm, penalty)?) / (2.0 * hi);
+        g[i] = if up && down {
+            xp[i] += step;
+            xm[i] -= step;
+            (c.eval_scalar(&xp, penalty)? - c.eval_scalar(&xm, penalty)?) / (2.0 * step)
+        } else {
+            let fx = match f0 {
+                Some(v) => v,
+                None => {
+                    let v = c.eval_scalar(x, penalty)?;
+                    f0 = Some(v);
+                    v
+                }
+            };
+            if up {
+                xp[i] += step;
+                (c.eval_scalar(&xp, penalty)? - fx) / step
+            } else if down {
+                xm[i] -= step;
+                (fx - c.eval_scalar(&xm, penalty)?) / step
+            } else {
+                0.0 // box narrower than the difference step: no information
+            }
+        };
     }
     Ok(g)
 }
@@ -71,7 +105,7 @@ fn run(
     };
     clamp_to_bounds(&mut x, &bounds);
     let mut fx = c.eval_scalar(&x, penalty)?;
-    let mut g = grad(p, &c, &x, penalty)?;
+    let mut g = grad(p, &c, &x, &bounds, penalty)?;
     let mut s_hist: Vec<Vec<f64>> = vec![];
     let mut y_hist: Vec<Vec<f64>> = vec![];
     let mut history = vec![HistoryPoint {
@@ -135,7 +169,7 @@ fn run(
             }
         };
         let (xn, fnew) = step;
-        let gn = grad(p, &c, &xn, penalty)?;
+        let gn = grad(p, &c, &xn, &bounds, penalty)?;
         let s: Vec<f64> = xn.iter().zip(&x).map(|(a, b)| a - b).collect();
         let y: Vec<f64> = gn.iter().zip(&g).map(|(a, b)| a - b).collect();
         if lbfgs_m > 0 && dot(&s, &y) > 1e-12 {
@@ -187,7 +221,7 @@ pub fn gradient_descent(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    run(p, x0, budget, ctl, 0)
+    crate::problem::guarded(p, budget, Method::GradientDescent, |g| run(g, x0, budget, ctl, 0))
 }
 
 /// Limited-memory BFGS (two-loop recursion, memory `m`).
@@ -198,7 +232,7 @@ pub fn lbfgs(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
-    run(p, x0, budget, ctl, m.max(1))
+    crate::problem::guarded(p, budget, Method::Lbfgs, |g| run(g, x0, budget, ctl, m.max(1)))
 }
 
 #[cfg(test)]

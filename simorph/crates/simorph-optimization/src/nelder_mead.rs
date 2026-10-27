@@ -12,6 +12,15 @@ pub fn nelder_mead(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
+    crate::problem::guarded(p, budget, Method::NelderMead, |g| nelder_mead_impl(g, x0, budget, ctl))
+}
+
+fn nelder_mead_impl(
+    p: &dyn ObjectiveFunction,
+    x0: Option<&[f64]>,
+    budget: &Budget,
+    ctl: &ExecutionControl,
+) -> Result<OptimizationResult> {
     let d = check_dim(p)?;
     let bounds = p.bounds();
     let c = Counted::new(p);
@@ -46,8 +55,7 @@ pub fn nelder_mead(
         let mut idx: Vec<usize> = (0..=d).collect();
         idx.sort_by(|&a, &b| {
             fs[a]
-                .partial_cmp(&fs[b])
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .total_cmp(&fs[b])
         });
         simplex = idx.iter().map(|&i| simplex[i].clone()).collect();
         fs = idx.iter().map(|&i| fs[i]).collect();
@@ -117,7 +125,7 @@ pub fn nelder_mead(
         }
     }
     let bi = (0..=d)
-        .min_by(|&a, &b| fs[a].partial_cmp(&fs[b]).unwrap())
+        .min_by(|&a, &b| fs[a].total_cmp(&fs[b]))
         .unwrap();
     let best_eval = p.evaluate(&simplex[bi])?;
     Ok(OptimizationResult {

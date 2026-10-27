@@ -39,8 +39,12 @@ pub struct Coupling {
     /// Stepping order for sequential masters.
     pub order: Vec<usize>,
     /// Algebraic loops (groups of slave names) detected among
-    /// direct-feedthrough slaves.
+    /// direct-feedthrough slaves (a feedthrough slave feeding itself is a
+    /// one-slave loop).
     pub algebraic_loops: Vec<Vec<String>>,
+    /// Inputs that are neither connected nor provided as parameters but were
+    /// explicitly allowed to take a default value (`"slave.port"`).
+    pub unconnected_inputs: Vec<String>,
 }
 
 impl Coupling {
@@ -70,6 +74,7 @@ impl Coupling {
 pub struct CouplingBuilder {
     slaves: Vec<(String, Box<dyn CosimSlave>, Params)>,
     connections: Vec<Connection>,
+    allowed_defaults: Vec<(String, f64)>,
 }
 
 fn split_ref(s: &str) -> Result<(&str, &str)> {
@@ -142,10 +147,62 @@ impl CouplingBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<Coupling> {
+    /// Explicitly allow input `"slave.port"` to stay unconnected with the
+    /// given constant value (otherwise `build()` refuses unconnected inputs).
+    pub fn allow_default_input(mut self, port: &str, value: f64) -> Result<Self> {
+        let (sn, pn) = split_ref(port)?;
+        let i = self
+            .slaves
+            .iter()
+            .position(|(n, _, _)| n == sn)
+            .ok_or_else(|| SimorphError::NotFound(format!("slave `{sn}`")))?;
+        if find_port(&self.slaves[i].1.manifest().input_schema, pn).is_none() {
+            return Err(SimorphError::NotFound(format!(
+                "input port `{pn}` on slave `{sn}`"
+            )));
+        }
+        self.allowed_defaults.push((port.to_string(), value));
+        Ok(self)
+    }
+
+    pub fn build(mut self) -> Result<Coupling> {
         let n = self.slaves.len();
         if n == 0 {
             return Err(SimorphError::InvalidInput("coupling has no slaves".into()));
+        }
+        // Unconnected inputs silently defaulted to 0 before (audit): now an
+        // input must be connected, given as a parameter, or allowed.
+        let mut unconnected = vec![];
+        let mut missing = vec![];
+        for (i, (sname, slave, params)) in self.slaves.iter_mut().enumerate() {
+            let ports: Vec<String> = slave
+                .manifest()
+                .input_schema
+                .iter()
+                .flat_map(expand_port)
+                .collect();
+            for port in ports {
+                let connected = self
+                    .connections
+                    .iter()
+                    .any(|c| c.to_slave == i && c.to_port == port);
+                if connected || params.contains_key(&port) {
+                    continue;
+                }
+                let full = format!("{sname}.{port}");
+                if let Some((_, v)) = self.allowed_defaults.iter().find(|(p, _)| *p == full) {
+                    params.insert(port.clone(), *v);
+                    unconnected.push(full);
+                } else {
+                    missing.push(full);
+                }
+            }
+        }
+        if !missing.is_empty() {
+            return Err(SimorphError::InvalidInput(format!(
+                "unconnected inputs without value: {} (connect them, provide them as parameters, or call allow_default_input)",
+                missing.join(", ")
+            )));
         }
         let feedthrough: Vec<bool> = self
             .slaves
@@ -167,7 +224,17 @@ impl CouplingBuilder {
             .collect();
         let names: Vec<String> = self.slaves.iter().map(|(n, _, _)| n.clone()).collect();
         // Try a topological order on the full graph first.
-        let (order, loops) = match topo_sort(&full) {
+        let self_loops: Vec<Vec<String>> = (0..n)
+            .filter(|&i| {
+                feedthrough[i]
+                    && self
+                        .connections
+                        .iter()
+                        .any(|c| c.from_slave == i && c.to_slave == i)
+            })
+            .map(|i| vec![names[i].clone()])
+            .collect();
+        let (order, mut loops) = match topo_sort(&full) {
             Some(o) => (o, vec![]),
             None => {
                 // Inside each strongly connected component, drop the edges
@@ -211,6 +278,7 @@ impl CouplingBuilder {
                 (order, loops)
             }
         };
+        loops.extend(self_loops);
         let slaves = self
             .slaves
             .into_iter()
@@ -234,6 +302,7 @@ impl CouplingBuilder {
             connections: self.connections,
             order,
             algebraic_loops: loops,
+            unconnected_inputs: unconnected,
         })
     }
 }

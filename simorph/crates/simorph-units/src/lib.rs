@@ -65,41 +65,59 @@ impl Dimension {
         den: 1,
     };
 
-    fn gcd(a: i16, b: i16) -> i16 {
-        let (mut a, mut b) = (a.abs(), b.abs());
-        while b != 0 {
-            let t = a % b;
-            a = b;
-            b = t;
+    fn from_wide(num: [i64; 7], den: i64) -> Option<Dimension> {
+        if den == 0 {
+            return None;
         }
-        if a == 0 {
-            1
-        } else {
-            a
-        }
-    }
-
-    fn normalise(mut self) -> Self {
-        let mut g = self.den;
-        for n in self.num {
-            g = Self::gcd(g, n);
-        }
-        if g > 1 {
-            for n in &mut self.num {
-                *n /= g;
+        // reduce in i64 before narrowing
+        let mut g = den.abs();
+        for n in num {
+            let (mut a, mut b) = (g, n.abs());
+            while b != 0 {
+                let t = a % b;
+                a = b;
+                b = t;
             }
-            self.den /= g;
+            g = a;
         }
-        self
+        let g = g.max(1) * den.signum();
+        let mut out = [0i16; 7];
+        for i in 0..7 {
+            out[i] = i16::try_from(num[i] / g).ok()?;
+        }
+        Some(Dimension {
+            num: out,
+            den: i16::try_from(den / g).ok()?,
+        })
     }
 
-    pub fn mul(self, other: Dimension) -> Dimension {
-        let den = self.den * other.den / Self::gcd(self.den, other.den);
-        let mut num = [0i16; 7];
+    /// Product of dimensions; `None` on exponent overflow.
+    pub fn checked_mul(self, other: Dimension) -> Option<Dimension> {
+        let (d1, d2) = (self.den as i64, other.den as i64);
+        let mut num = [0i64; 7];
         for i in 0..7 {
-            num[i] = self.num[i] * (den / self.den) + other.num[i] * (den / other.den);
+            num[i] = self.num[i] as i64 * d2 + other.num[i] as i64 * d1;
         }
-        Dimension { num, den }.normalise()
+        Self::from_wide(num, d1 * d2)
+    }
+
+    /// Rational power p/q; `None` on overflow or q = 0.
+    pub fn checked_pow(self, p: i16, q: i16) -> Option<Dimension> {
+        if q == 0 {
+            return None;
+        }
+        let mut num = [0i64; 7];
+        for i in 0..7 {
+            num[i] = self.num[i] as i64 * p as i64;
+        }
+        Self::from_wide(num, self.den as i64 * q as i64)
+    }
+
+    /// Product of dimensions.  Panics on exponent overflow (|exponent| >
+    /// 32767); parsers use [`Dimension::checked_mul`] and report an error.
+    pub fn mul(self, other: Dimension) -> Dimension {
+        self.checked_mul(other)
+            .expect("dimension exponent overflow")
     }
 
     pub fn inv(self) -> Dimension {
@@ -114,17 +132,11 @@ impl Dimension {
         self.mul(other.inv())
     }
 
-    /// Raise to a rational power p/q.
+    /// Raise to a rational power p/q.  Panics on overflow or q = 0; parsers
+    /// use [`Dimension::checked_pow`].
     pub fn pow(self, p: i16, q: i16) -> Dimension {
-        let mut num = self.num;
-        for n in &mut num {
-            *n *= p;
-        }
-        Dimension {
-            num,
-            den: self.den * q,
-        }
-        .normalise()
+        self.checked_pow(p, q)
+            .expect("dimension exponent overflow or zero denominator")
     }
 
     pub fn is_dimensionless(&self) -> bool {
@@ -207,6 +219,10 @@ fn base_unit(symbol: &str) -> Option<(f64, f64, Dimension, bool)> {
         "mol" => (1.0, 0.0, D::AMOUNT, true),
         "cd" => (1.0, 0.0, D::LUMINOSITY, true),
         // SI derived
+        // Hz is cycles per second.  Because radians are dimensionless, Hz and
+        // rad/s share a dimension and convert with factor 1 — physically a
+        // frequency f in Hz corresponds to ω = 2πf rad/s.  Callers converting
+        // between them must apply 2π themselves.
         "Hz" => (1.0, 0.0, d(0, 0, -1, 0, 0, 0, 0), true),
         "N" => (1.0, 0.0, d(1, 1, -2, 0, 0, 0, 0), true),
         "Pa" => (1.0, 0.0, d(-1, 1, -2, 0, 0, 0, 0), true),
@@ -253,7 +269,14 @@ fn base_unit(symbol: &str) -> Option<(f64, f64, Dimension, bool)> {
         "lb" => (0.453_592_37, 0.0, D::MASS, false),
         "kt" | "knot" => (1852.0 / 3600.0, 0.0, d(1, 0, -1, 0, 0, 0, 0), false),
         "G" => (1e-4, 0.0, d(0, 1, -2, -1, 0, 0, 0), false),
+        // Logarithmic: declared for ports, but never converted linearly (see `convert`).
         "dB" => (1.0, 0.0, D::NONE, false),
+        "psi" => (6_894.757_293_168, 0.0, d(-1, 1, -2, 0, 0, 0, 0), false),
+        "mmHg" => (133.322_387_415, 0.0, d(-1, 1, -2, 0, 0, 0, 0), false),
+        "ha" => (1e4, 0.0, d(2, 0, 0, 0, 0, 0, 0), false),
+        // Revolutions per minute as a *frequency* (cycles per minute, 1/60 Hz);
+        // no 2π: converting rpm to rad/s requires an explicit 2π.
+        "rpm" => (1.0 / 60.0, 0.0, d(0, 0, -1, 0, 0, 0, 0), false),
         "percent" | "%" => (0.01, 0.0, D::NONE, false),
         "ppm" => (1e-6, 0.0, D::NONE, false),
         "1" | "" => (1.0, 0.0, D::NONE, false),
@@ -289,6 +312,26 @@ fn prefix(p: &str) -> Option<f64> {
         "q" => 1e-30,
         _ => return None,
     })
+}
+
+/// Exact small rational p/q (q ≤ 12) for an exponent value, with range checks.
+fn rational_exponent(v: f64) -> Result<(i16, i16)> {
+    if !v.is_finite() {
+        return Err(SimorphError::Unit(format!("non-finite exponent {v}")));
+    }
+    for q in 1..=12i32 {
+        let p = v * q as f64;
+        if (p - p.round()).abs() < 1e-9 {
+            let p = p.round();
+            if p.abs() > i16::MAX as f64 {
+                return Err(SimorphError::Unit(format!("exponent {v} out of range")));
+            }
+            return Ok((p as i16, q as i16));
+        }
+    }
+    Err(SimorphError::Unit(format!(
+        "unsupported fractional exponent {v} (denominator > 12)"
+    )))
 }
 
 /// Resolve a single symbol (possibly prefixed) into (factor, offset, dimension).
@@ -449,12 +492,20 @@ impl Parser {
                 Tok::Mul => {
                     self.next();
                     let r = self.term()?;
-                    acc = (acc.0 * r.0, 0.0, acc.2.mul(r.2));
+                    let d = acc
+                        .2
+                        .checked_mul(r.2)
+                        .ok_or_else(|| SimorphError::Unit("dimension exponent overflow".into()))?;
+                    acc = (acc.0 * r.0, 0.0, d);
                 }
                 Tok::Div => {
                     self.next();
                     let r = self.term()?;
-                    acc = (acc.0 / r.0, 0.0, acc.2.div(r.2));
+                    let d = acc
+                        .2
+                        .checked_mul(r.2.inv())
+                        .ok_or_else(|| SimorphError::Unit("dimension exponent overflow".into()))?;
+                    acc = (acc.0 / r.0, 0.0, d);
                 }
                 _ => break,
             }
@@ -468,49 +519,41 @@ impl Parser {
             self.next();
             let (p, q) = self.exponent()?;
             let f = a.0.powf(p as f64 / q as f64);
-            return Ok((f, 0.0, a.2.pow(p, q)));
+            let d =
+                a.2.checked_pow(p, q)
+                    .ok_or_else(|| SimorphError::Unit("dimension exponent overflow".into()))?;
+            return Ok((f, 0.0, d));
         }
         Ok(a)
     }
     // exponent := int | '(' int '/' int ')' | '-' int
     fn exponent(&mut self) -> Result<(i16, i16)> {
-        match self.next() {
-            Some(Tok::Num(v)) => {
-                if v.fract() == 0.0 {
-                    Ok((v as i16, 1))
-                } else {
-                    // allow 0.5
-                    let q = 2;
-                    let p = (v * q as f64).round();
-                    if (p / q as f64 - v).abs() < 1e-12 {
-                        Ok((p as i16, q))
-                    } else {
-                        Err(SimorphError::Unit(format!(
-                            "unsupported fractional exponent {v}"
-                        )))
-                    }
-                }
-            }
+        let num = |t: Option<Tok>| match t {
+            Some(Tok::Num(v)) => Ok(v),
+            other => Err(SimorphError::Unit(format!("bad exponent token {other:?}"))),
+        };
+        let value = match self.peek() {
             Some(Tok::LParen) => {
-                let p = match self.next() {
-                    Some(Tok::Num(v)) => v as i16,
-                    _ => return Err(SimorphError::Unit("bad exponent".into())),
-                };
-                let mut q = 1;
+                self.next();
+                let p = num(self.next())?;
+                let mut v = p;
                 if let Some(Tok::Div) = self.peek() {
                     self.next();
-                    q = match self.next() {
-                        Some(Tok::Num(v)) => v as i16,
-                        _ => return Err(SimorphError::Unit("bad exponent".into())),
-                    };
+                    let q = num(self.next())?;
+                    if q == 0.0 {
+                        return Err(SimorphError::Unit("exponent with zero denominator".into()));
+                    }
+                    v = p / q;
                 }
                 match self.next() {
-                    Some(Tok::RParen) => Ok((p, q)),
-                    _ => Err(SimorphError::Unit("expected `)` after exponent".into())),
+                    Some(Tok::RParen) => {}
+                    _ => return Err(SimorphError::Unit("expected `)` after exponent".into())),
                 }
+                v
             }
-            other => Err(SimorphError::Unit(format!("bad exponent token {other:?}"))),
-        }
+            _ => num(self.next())?,
+        };
+        rational_exponent(value)
     }
     // atom := symbol | number | '(' expr ')'
     fn atom(&mut self) -> Result<(f64, f64, Dimension)> {
@@ -566,6 +609,16 @@ pub fn parse_unit(expr: &str) -> Result<Unit> {
 
 /// Convert `value` from unit `from` to unit `to`.
 pub fn convert(value: f64, from: &str, to: &str) -> Result<f64> {
+    let is_db = |e: &str| {
+        tokenize(e)
+            .map(|t| t.iter().any(|x| matches!(x, Tok::Sym(s) if s == "dB")))
+            .unwrap_or(false)
+    };
+    if (is_db(from) || is_db(to)) && from.trim() != to.trim() {
+        return Err(SimorphError::Unit(format!(
+            "`{from}` → `{to}`: decibels are logarithmic and cannot be converted linearly"
+        )));
+    }
     let f = parse_unit(from)?;
     let t = parse_unit(to)?;
     if f.dimension != t.dimension {
@@ -669,5 +722,50 @@ mod tests {
     fn unknown_symbol_is_rejected() {
         assert!(parse_unit("furlong").is_err());
         assert!(parse_unit("kdegC").is_err());
+    }
+
+    #[test]
+    fn audit_parenthesised_fractional_exponents() {
+        let half = parse_unit("m^(1/2)").unwrap().dimension;
+        assert_eq!(parse_unit("m^(0.5)").unwrap().dimension, half);
+        assert_eq!(parse_unit("m^0.5").unwrap().dimension, half);
+        assert_eq!(
+            parse_unit("m^(1.5)").unwrap().dimension,
+            parse_unit("m^(3/2)").unwrap().dimension
+        );
+        assert_ne!(
+            parse_unit("m^(1.5)").unwrap().dimension,
+            parse_unit("m").unwrap().dimension
+        );
+        assert!((parse_unit("km^(0.5)").unwrap().factor - 1000f64.sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn audit_negative_and_zero_denominators() {
+        assert_eq!(
+            parse_unit("m^(1/-2)").unwrap().dimension,
+            parse_unit("m^(-1/2)").unwrap().dimension
+        );
+        check_same_dimension("m^(1/-2)", "m^(-1/2)").unwrap();
+        assert!(parse_unit("m^(1/0)").is_err());
+    }
+
+    #[test]
+    fn audit_exponent_overflow_is_an_error() {
+        assert!(parse_unit("m^30000*m^30000").is_err());
+        assert!(parse_unit("m^100000").is_err());
+    }
+
+    #[test]
+    fn audit_new_units_and_log_units() {
+        assert!((convert(1.0, "psi", "kPa").unwrap() - 6.894757293168).abs() < 1e-12);
+        assert!((convert(760.0, "mmHg", "atm").unwrap() - 1.0).abs() < 1e-6);
+        assert!((convert(1.0, "ha", "m^2").unwrap() - 1e4).abs() < 1e-9);
+        assert!((convert(60.0, "rpm", "Hz").unwrap() - 1.0).abs() < 1e-12);
+        // Hz → rad/s is dimensionally allowed with factor 1 (documented: no 2π).
+        assert_eq!(convert(1.0, "Hz", "rad/s").unwrap(), 1.0);
+        // dB never converts linearly.
+        assert!(convert(20.0, "dB", "1").is_err());
+        assert_eq!(convert(20.0, "dB", "dB").unwrap(), 20.0);
     }
 }

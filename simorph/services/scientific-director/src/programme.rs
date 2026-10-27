@@ -138,7 +138,7 @@ pub fn plan(
         .iter()
         .map(|q| (q.name.clone(), q.value))
         .collect();
-    let n_design = problem.design_variables.len();
+    let n_design_total = problem.design_variables.len();
     let budget_runs = problem.budget.max_runs.max(1) as usize;
 
     for cand in &analysis.solution_candidates {
@@ -156,6 +156,17 @@ pub fn plan(
             // directly; it is reached through model chaining (ARC-03).
             continue;
         }
+
+        // Only the design variables that are inputs of this component can be
+        // explored with it; the others would be silently ignored.
+        let design: Vec<DesignVariable> = problem
+            .design_variables
+            .iter()
+            .filter(|d| cand.requires.contains(&d.name))
+            .cloned()
+            .collect();
+        let n_design = design.len();
+        let _ = n_design_total;
 
         // 1. Reference check: cheap, decisive for tool validity.
         let ref_id = ExperimentId::deterministic(&format!("{}:{}:ref", problem.id, cand.component));
@@ -193,7 +204,7 @@ pub fn plan(
                 component_name: cand.name.clone(),
                 hypotheses: related_h.clone(),
                 fixed_inputs: fixed.clone(),
-                design_variables: problem.design_variables.clone(),
+                design_variables: design.clone(),
                 n_points,
                 fidelity: 0.5,
                 success_criteria: vec![SuccessCriterion {
@@ -251,7 +262,7 @@ pub fn plan(
                     component_name: cand.name.clone(),
                     hypotheses: related_h.clone(),
                     fixed_inputs: fixed.clone(),
-                    design_variables: problem.design_variables.clone(),
+                    design_variables: design.clone(),
                     n_points,
                     fidelity: 0.7,
                     success_criteria: criteria,

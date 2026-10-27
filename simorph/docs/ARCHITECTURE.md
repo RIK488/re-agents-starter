@@ -1,203 +1,249 @@
-# SIMORPH — Architecture cible intégrale
+# SIMORPH — Architecture globale (20 sous-systèmes)
 
-Statut : architecture de référence couvrant **l'intégralité du système final**.
-Chaque composant est repéré par un identifiant stable (`ARC-xx`) repris dans
-`REQUIREMENTS.md`, `ACCEPTANCE_CRITERIA.md` et `STATUS.md`. Le registre d'état
-(`STATUS.md`) est la seule source de vérité sur ce qui est réellement
-implémenté et testé ; ce document décrit la cible, pas l'état d'avancement.
+Version 2 (2026-10-27). Remplace la version 1 (12 blocs ARC-01…ARC-12),
+dont les identifiants restent valides et sont repris ci-dessous.
 
-## 1. Principes directeurs
+Ce document décrit le **système final**. L'état réel de chaque bloc
+(opérationnel, expérimental, planifié, recherche) n'est jamais affirmé ici :
+il est tenu dans `STATUS.md`, alimenté par les tests et par l'audit
+`audit/AUDIT-2026-10-27.md`.
 
-| Principe | Conséquence architecturale |
+Documents associés :
+
+| Document | Contenu |
 |---|---|
-| Aucun domaine codé en dur dans le noyau | Le noyau (`crates/`) ne connaît que des manifestes, des unités, des graphes de tâches et des niveaux de preuve. Les disciplines vivent dans `plugins/` et dans des composants externes décrits par le contrat §7. |
-| Catégories épistémiques non interchangeables | `EvidenceLevel` (calculé / simulé / validé empiriquement / démontré / hypothèse) est porté par chaque `TaskResult` et chaque `Claim`. Les transitions sont restreintes et exigent un enregistrement de validation (`simorph-core::evidence`). |
-| Le directeur ne juge pas ses propres résultats | Le moteur de validation est un crate séparé, sans dépendance vers le directeur ; les références de validation sont scellées (`ProtectedReferences`, `ProtectedGuard`) et toute mutation exige un principal Admin **et** une approbation humaine. |
-| Rust là où il apporte une valeur démontrable | Orchestration, ordonnancement, exécution, provenance, sécurité, télémétrie, noyaux numériques critiques en Rust ; bibliothèques scientifiques Python/Julia/C++/CUDA intégrées par adaptateurs, jamais réécrites sans raison technique démontrée (`research/open-source-audit/`). |
-| Provenance complète | Tout run possède un identifiant unique, un hash de requête, un hash de sortie, et un enregistrement chaîné dans le registre de provenance avec capture de l'environnement. |
-| Simulation guidée par l'incertitude | Toute décision d'expérience est scorée par un `Tradeoff` (précision, temps, coût, risque, valeur informative) avec des poids déclarés par le propriétaire du problème, pas par le directeur. |
+| `COMPONENT_MAP.md` | graphe réel des dépendances entre crates (généré par `cargo metadata`) |
+| `INTERFACE_CONTRACTS.md` | contrats d'interface entre tous les sous-systèmes |
+| `OSS_INTEGRATION_MATRIX.md` | dépôts open source : faits vérifiés, décision, état d'intégration mesuré |
+| `GAP_ANALYSIS.md` | capacités manquantes par rapport à la cible |
+| `INFRASTRUCTURE.md` | déploiement local, cluster, cloud |
+| `COMPUTE_STRATEGY.md` | exécution et entraînement CPU/GPU |
+| `VALIDATION_FRAMEWORK.md` | dispositif de validation scientifique et technique |
+| `IMPLEMENTATION_PLAN.md` | plan de réalisation de l'architecture complète |
 
-## 2. Vue d'ensemble
+## 1. Principes
+
+1. **Rust au centre, pas partout.** Rust porte l'orchestration, les contrats,
+   la concurrence, l'ordonnancement, l'isolation, la sécurité, la provenance,
+   les services et les noyaux numériques dont la performance ou la sûreté se
+   mesure. Python, Julia, C++ et CUDA restent la voie d'accès aux bibliothèques
+   matures (SciPy, MuJoCo, PyTorch, Z3, SymPy…), toujours derrière le même
+   contrat de composant et dans un processus isolé.
+2. **Un seul contrat d'exécution.** Tout moteur — natif, Python, FMU, worker
+   distant, modèle d'IA entraîné — est un `Component` décrit par un
+   `ComponentManifest` (§7 du cahier des charges).
+3. **Niveaux de preuve non interchangeables.** Calculé, simulé, validé
+   empiriquement, démontré, hypothèse : transitions restreintes, toujours
+   adossées à un enregistrement de validation. `MathematicallyProven` exige un
+   certificat vérifié indépendamment (sous-système 13).
+4. **Juge indépendant et protégé.** Validation, suites d'évaluation scellées,
+   critères de réussite hachés et autorisations de déploiement ne sont
+   modifiables ni par le directeur, ni par les agents, ni par la boucle
+   d'auto-amélioration (Admin + approbation humaine signée).
+5. **Tout est tracé.** Chaque problème, hypothèse, run, jeu de données,
+   validation, décision et modification est un nœud d'un registre chaîné.
+
+## 2. Vue en couches
 
 ```
-                       ┌────────────────────────────────────────────┐
-                       │  Interface universelle (ARC-01)            │
-                       │  apps/web (API HTTP + UI)  apps/cli         │
-                       └───────────────┬────────────────────────────┘
-                                       │ ProblemSpec / commandes
-                       ┌───────────────▼────────────────────────────┐
-                       │  Directeur scientifique autonome (ARC-02)  │
-                       │  services/scientific-director              │
-                       │  décomposition · hypothèses · programme    │
-                       │  expérimental · arrêt · conclusions        │
-                       └───┬──────────┬──────────┬──────────┬───────┘
-                           │          │          │          │
-     ┌─────────────────────▼──┐ ┌─────▼──────┐ ┌─▼────────┐ ┌▼──────────────────┐
-     │ Modélisation (ARC-03)  │ │ Expériment.│ │ Optimis. │ │ Laboratoire IA    │
-     │ model-registry,        │ │ (ARC-06)   │ │ (ARC-07) │ │ (ARC-10)          │
-     │ model-factory          │ │ experiment │ │ optimiz. │ │ ai-laboratory,    │
-     └─────────┬──────────────┘ └─────┬──────┘ └─┬────────┘ │ training, eval    │
-               │                      │          │          └───────┬───────────┘
-     ┌─────────▼──────────────────────▼──────────▼──────────────────▼───────────┐
-     │ Simulation (ARC-04/05) : simulation, cosimulation, simulator-factory,     │
-     │ plugins/*, adaptateurs python / fmi / subprocess / http / container        │
-     └─────────┬────────────────────────────────────────────────────────────────┘
-               │ TaskRequest / TaskResult (contrat §7)
-     ┌─────────▼────────────────────────────────────────────────────────────────┐
-     │ Noyau d'exécution Rust (ARC-11) : orchestrator · scheduler · execution ·  │
-     │ security · telemetry · provenance                                        │
-     └─────────┬────────────────────────────────────────────────────────────────┘
-               │
-     ┌─────────▼──────────────┐   ┌──────────────────────────┐   ┌───────────────────┐
-     │ Validation indépendante │   │ Incertitude (ARC-09)     │   │ Mémoire / savoir  │
-     │ (ARC-08) validation     │   │ uncertainty              │   │ (ARC-12) knowledge│
-     └────────────────────────┘   └──────────────────────────┘   └───────────────────┘
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │ 18 Interface de laboratoire (web, CLI) · visualisation 2D/3D · suivi direct │
+ └──────────────┬──────────────────────────────────────────────────────────────┘
+                │ actions (registre unique CLI = HTTP)
+ ┌──────────────▼──────────────────────────────────────────────────────────────┐
+ │ 2 Orchestrateur multi-agents : Interprète · Planificateur · Modélisateur ·  │
+ │   Expérimentateur · Critique · Validateur (indépendant) · Archiviste        │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │ 3 Compréhension & décomposition │ 4 Générateur de modèles │ 5 Générateur de │
+ │   (langue naturelle → ProblemSpec)│  (équations, chaînage) │   simulateurs   │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │ 9 Expérimentation autonome (directeur scientifique + runtime de campagne)   │
+ │ 10 Évolution d'algorithmes/agents │ 11 Entraînement │ 12 Renforcement       │
+ │ 20 Boucle d'amélioration continue (limites → données validées → entraînement│
+ │    → comparaison scellée → acceptation/rejet → retour arrière)              │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │ 6 Cosimulation │ 8 Calcul scientifique & physique │ 7 Multimodal │ 19 Connecteurs│
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │ 13 Vérification formelle │ 14 Évaluation indépendante │ 15 Mémoire & traçabilité│
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │ 1 Noyau Rust : contrats · unités · ordonnanceur · exécution · sécurité ·    │
+ │   télémétrie │ 16 Calcul distribué CPU/GPU │ 17 Génération/exécution sûre    │
+ └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Le directeur **ne dépend pas** de la validation ; la validation **ne dépend pas**
-du directeur. Les deux ne partagent que `simorph-core`. C'est une contrainte de
-compilation (graphe de dépendances Cargo), pas une convention.
+## 3. Les vingt sous-systèmes
 
-## 3. Sous-systèmes
+Pour chaque bloc : responsabilités, réalisation (crates), technologies
+externes, contrats principaux. Les états sont dans `STATUS.md`.
 
-### ARC-01 Interface universelle (`apps/web`, `apps/cli`)
-Responsabilités §3.1 et §12. Chaque commande visible correspond à une action
-réellement implémentée : l'API HTTP expose uniquement des routes câblées à des
-fonctions testées, et l'interface liste les actions à partir du même registre
-que le CLI (`apps/cli/src/commands.rs`). Espaces : Projet, Recherche,
-Modélisation, Simulation, Optimisation, IA, Validation, Journal/Provenance,
-Export. Visualisation 2D/3D : séries temporelles (Plotly), trajectoires 3D
-(Three.js) alimentées par les trajectoires JSON exportées par le noyau.
+### 1. Noyau Rust haute performance
+* Responsabilités : contrats universels, unités et dimensions, niveaux de
+  preuve, identifiants, ordonnancement de graphes de tâches sous contrainte
+  de ressources, exécution (in-process, sous-processus), sécurité, télémétrie.
+* Crates : `simorph-core`, `simorph-units`, `simorph-scheduler`,
+  `simorph-execution`, `simorph-orchestrator`, `simorph-plugin-sdk`,
+  `simorph-security`, `simorph-telemetry`.
+* Technologies : Tokio, Rayon, Serde, Axum, nalgebra, tracing (ADR-0001).
 
-### ARC-02 Directeur scientifique autonome (`services/scientific-director`)
-Machine à états d'une **campagne** :
-`Intake → Analyse(connus/inconnus/calculable/à modéliser/à simuler/données manquantes/à démontrer/à vérifier) → Hypothèses → Programme expérimental → Exécution → Révision → Décision (continuer / arrêter / conclure)`.
-Chaque transition est enregistrée dans la provenance. Les critères d'arrêt
-(budget, absence de gain informatif, contradictions non résolues) et les poids
-du compromis viennent du `ProblemSpec`. Le raisonnement en langage naturel
-(LLM) est un **composant optionnel** derrière une interface `Reasoner` ; le
-directeur fonctionne sans lui avec un planificateur déterministe fondé sur les
-manifestes (capacités, domaines, unités) et sur les règles de sélection de
-méthodes. Un LLM ne peut jamais promouvoir un niveau de preuve.
+### 2. Orchestrateur autonome multi-agents
+* Responsabilités : agents à rôles et permissions explicites, bus de messages
+  typés et journalisés, superviseur (budget, détection de boucles), règles
+  non contournables (aucun agent ne modifie critères, références, permissions).
+* Crate : `services/agents`. Raisonnement LLM optionnel derrière un client
+  configurable, sans autorité sur les niveaux de preuve.
+* Réutilisation possible : LangGraph (graphe d'agents Python exposé comme
+  `Component`), OpenHands pour les tâches de développement en conteneur.
 
-#### Runtime de campagne (`services/campaign-runtime`)
-Le directeur ne dépend d'aucun moteur : il émet des `PlannedExperiment` et
-consomme des `ExperimentOutcome`. Le runtime de campagne implémente
-`ExperimentExecutor` avec les moteurs réels (expérimentation, optimisation
-avec sélection de méthode, incertitude), soumet chaque run à la validation
-indépendante, convertit les unités problème ↔ ports, et journalise tout dans
-la provenance. C'est lui, et non le directeur, qui évalue les critères de
-réussite figés (hachés) avec l'évaluateur d'expressions du moteur de
-validation.
+### 3. Compréhension et décomposition des problèmes
+* Responsabilités : texte → `ProblemSpec` (grandeurs, unités, rôles,
+  objectifs, contraintes, inconnues), correspondance avec les ports des
+  composants, liste explicite des ambiguïtés ; décomposition en catégories
+  (connu, inconnu, calculable, à modéliser, à simuler, données, preuve,
+  vérification).
+* Crates : `services/problem-understanding`, `services/scientific-director`
+  (analyse).
 
-### ARC-03 Moteur universel de modélisation (`crates/simorph-model-registry`, `services/model-factory`)
-`ModelDescriptor` pour chaque formalisme listé §3.3. La fabrique de modèles
-construit des descripteurs à partir d'un `ProblemSpec` et des composants
-disponibles (chaînage par unités et capacités), et vérifie la cohérence
-dimensionnelle avant tout calcul.
+### 4. Générateur de modèles scientifiques et mathématiques
+* Responsabilités : descripteurs de modèles (16 formalismes), chaînage de
+  composants par unités, modèles exécutables à partir d'équations typées,
+  découverte de lois par évolution symbolique (via 10), vérification
+  symbolique (via 13).
+* Crates : `simorph-model-registry`, `services/model-factory`,
+  `simorph-evolution` (régression symbolique dimensionnelle).
+* Réutilisation : SymPy, OpenModelica (Modelica → FMU).
 
-### ARC-04 Générateur autonome de simulateurs (`services/simulator-factory`)
-Pipeline en 10 étapes (§3.4) : recherche dans le registre → compatibilité →
-configuration → intégration (adaptateur) → complément → génération (composition
-de modèles existants, génération de code Python/Rust pour un composant
-subprocess, exécuté en bac à sable) → tests de validité (cas de référence,
-invariants) → comparaison de méthodes numériques (plusieurs solveurs sur le même
-modèle) → amélioration (sélection du solveur le plus rapide à précision
-donnée) → documentation des limites (manifeste). Un simulateur généré reçoit le
-niveau `Simulated` et ne devient jamais « validé » sans confrontation à des
-références scellées.
+### 5. Générateur de simulateurs spécialisés et multidisciplinaires
+* Responsabilités : pipeline en 10 étapes (recherche, compatibilité,
+  configuration, intégration, complément, génération, test, comparaison de
+  méthodes, amélioration, documentation des limites).
+* Crate : `services/simulator-factory`.
 
-### ARC-05 Cosimulation multidisciplinaire (`crates/simorph-cosimulation`, `adapters/fmi`)
-Interface esclave de type FMI, algorithmes maîtres Jacobi / Gauss-Seidel /
-itératif avec retour arrière, conversion d'unités automatique, détection de
-boucles algébriques, propagation d'incertitude par ensembles, détection
-d'incohérences (NaN, sortie de domaine de validité, plages de ports).
+### 6. Cosimulation et couplage
+* Responsabilités : esclaves type FMI, maîtres Jacobi/Gauss-Seidel/itératif,
+  conversion d'unités, boucles algébriques, ensembles, FMU externes.
+* Crates : `simorph-cosimulation`, `adapters/fmi`.
+* Réutilisation : FMI 2/3, FMPy, preCICE (couplage de champs, phase ultérieure).
 
-### ARC-06 Expérimentation universelle (`crates/simorph-experiment`)
-Plans d'expériences, exécution parallèle, reproduction par identifiant,
-archivage, recherche de contre-exemples, analyse des causes probables d'échec.
+### 7. Infrastructure multimodale
+* Responsabilités : actifs typés (texte, image, audio, vidéo, géométrie,
+  tableaux) avec empreinte, analyses produisant des grandeurs à unités,
+  géométrie maillée (volume, inertie, étanchéité).
+* Crate : `simorph-multimodal` (image, hound, rustfft, ffmpeg en CLI).
+* Cible : modèles multimodaux (vision, audio) via le pont Python (11).
 
-### ARC-07 Optimisation (`crates/simorph-optimization`)
-Onze familles listées §3.7 ; `MethodSelector` choisit en fonction des traits
-du problème et justifie son choix par écrit.
+### 8. Calcul scientifique et simulation physique
+* Responsabilités : intégrateurs explicites et implicites, événements,
+  évènements discrets, multiagents, modèles physiques de domaine, moteurs
+  externes matures.
+* Crates : `simorph-simulation`, `plugins/physics`, `plugins/engineering`,
+  `adapters/scientific-python` (SciPy, SymPy, MuJoCo, Gymnasium, PyTorch).
+* Réutilisation : SciPy (raides/DAE), MuJoCo (corps rigides), Chrono et
+  Warp (phase ultérieure), SUNDIALS/PETSc/FEniCSx (EDP, phase ultérieure).
 
-### ARC-08 Validation scientifique indépendante (`crates/simorph-validation`)
-Les onze contrôles §3.8 et la classification épistémique. Les références
-sont scellées ; la clé de descellement est une approbation humaine.
+### 9. Expérimentation scientifique autonome
+* Responsabilités : analyse, hypothèses réfutables, programme expérimental à
+  critères figés et hachés, exécution, révision, contradictions, arrêt,
+  conclusions traçables ; plans d'expériences, reproduction, contre-exemples.
+* Crates : `services/scientific-director`, `services/campaign-runtime`,
+  `simorph-experiment`, `simorph-optimization`, `simorph-uncertainty`.
 
-### ARC-09 Incertitude (`crates/simorph-uncertainty`)
-Propagation, sensibilité globale (Sobol, Morris), valeur de l'information,
-sélection de fidélité, surrogates.
+### 10. Évolution des algorithmes et des agents
+* Responsabilités : programmation génétique typée et dimensionnelle, îlots,
+  diversité de qualité (MAP-Elites), évolution de code source exécuté en bac
+  à sable avec opérateurs de mutation syntaxiques ou LLM, évaluateur scellé.
+* Crate : `simorph-evolution`.
+* Inspirations : ShinkaEvolve, Darwin Gödel Machine (principes repris,
+  licences et sûreté vérifiées dans la matrice).
 
-### ARC-10 Laboratoire d'amélioration des IA (`services/ai-laboratory`, `training-service`, `evaluation-service`, `plugins/ai`)
-Boucle §5.1 implémentée comme une campagne du directeur spécialisée : les
-candidats d'amélioration sont évalués par `evaluation-service` contre des
-suites de référence scellées, acceptés uniquement si l'amélioration est
-statistiquement significative sur la métrique déclarée **et** sans régression
-sur les métriques protégées. Le `training-service` pilote PyTorch/TRL/PEFT via
-le pont Python (`adapters/python`), jamais en in-process. L'auto-amélioration
-de SIMORPH (§5.2) passe par le même circuit, en bac à sable, avec retour
-arrière (`Rollback`) et sans accès aux références scellées ni à la politique de
-sécurité (`Permission::SelfModify` interdite aux agents autonomes).
+### 11. Entraînement et fine-tuning des modèles d'IA
+* Responsabilités : réseaux natifs déterministes (MLP, Adam), modèles comme
+  composants, jobs d'entraînement in-process / Python / externe, jeux de
+  données hachés, gabarits PyTorch/TRL/PEFT, gestion GPU (16).
+* Crates : `simorph-learning`, `services/training-service`.
+* Réutilisation : PyTorch, Transformers, PEFT, TRL, DeepSpeed (GPU).
 
-### ARC-11 Noyau d'exécution Rust (`orchestrator`, `scheduler`, `execution`, `security`, `telemetry`, `provenance`, `plugin-sdk`)
-Voir `adr/0001-choix-technologiques-rust.md`. Graphe de tâches, admission par
-ressources, délais, annulation, reprise après interruption, isolation des
-composants externes (sous-processus avec politique de bac à sable), RBAC,
-approbation humaine, journal d'audit, métriques Prometheus/OpenTelemetry.
+### 12. Apprentissage par renforcement
+* Responsabilités : environnements (natifs et Gymnasium), REINFORCE, PPO,
+  Q-learning, contrôle des simulateurs SIMORPH comme environnements.
+* Crates : `simorph-learning` (RL), `simorph-optimization::rl`,
+  `adapters/scientific-python` (Gymnasium).
+* Réutilisation : Ray RLlib (passage à l'échelle).
 
-### ARC-12 Mémoire scientifique et transfert interdisciplinaire (`crates/simorph-knowledge`, `services/knowledge-service`)
-Graphe de connaissances typé par niveau de preuve et par statut ; les
-transferts entre disciplines sont produits comme **hypothèses** avec critère
-de réfutation.
+### 13. Vérification mathématique et formelle
+* Responsabilités : SMT (Z3) avec certificats re-vérifiés indépendamment,
+  vérification symbolique (SymPy), arithmétique d'intervalles à arrondi
+  dirigé, back-end Lean 4, octroi de `MathematicallyProven` aux seuls énoncés
+  certifiés.
+* Crate : `simorph-formal`, en lien avec `simorph-validation`.
 
-## 4. Flux de données
+### 14. Évaluation indépendante des performances
+* Responsabilités : suites scellées protégées (Admin + approbation), fiches
+  de score séparant qualité, robustesse, généralisation, vitesse et coût,
+  harnais externes.
+* Crates : `services/evaluation-service`, `services/ai-laboratory`,
+  `simorph-validation`.
+* Réutilisation : Inspect AI, lm-evaluation-harness, HELM, LightEval.
 
-1. `ProblemSpec` (JSON, schéma `schemas/problem_spec.schema.json`) entre par
-   l'interface.
-2. Le directeur produit une `Campaign` : analyse, hypothèses, programme
-   (liste d'`ExperimentPlan`), chaque plan ciblant un composant du registre.
-3. L'orchestrateur transforme chaque plan en `RunGraph` (nœuds = `TaskRequest`),
-   l'ordonnanceur les exécute sous contrôle de ressources ; chaque résultat est
-   un `TaskResult` avec `request_hash`, `output_hash`, `evidence`.
-4. Le moteur de validation produit un `ValidationRecord` par run/expérience ;
-   seul lui peut faire évoluer le `EvidenceLevel` d'un `Claim`.
-5. Provenance : chaque objet ci-dessus est un nœud chaîné ; `explain(id)`
-   reconstruit la chaîne causale.
-6. Export : rapports Markdown/JSON, trajectoires, manifestes, code généré.
+### 15. Mémoire scientifique persistante et traçabilité
+* Responsabilités : registre de provenance chaîné et vérifiable, archive
+  d'expériences, graphe de connaissances typé par niveau de preuve, mémoire
+  §11, explication causale, transferts interdisciplinaires comme hypothèses.
+* Crates : `simorph-provenance`, `simorph-knowledge`,
+  `services/knowledge-service`, `simorph-experiment::archive`.
+* Réutilisation : PostgreSQL (registre multi-utilisateur), DuckDB, MLflow et
+  DVC (suivi d'expériences et versionnement de données), Qdrant (recherche
+  vectorielle).
 
-## 5. Contrat universel (§7)
+### 16. Calcul distribué CPU/GPU
+* Responsabilités : coordinateur et workers, inventaire matériel réel,
+  placement selon ressources, battements de cœur, reprise sur panne,
+  déduplication, authentification des workers ; correspondance avec Ray et
+  les Jobs Kubernetes.
+* Crate : `simorph-distributed` ; voir `COMPUTE_STRATEGY.md`.
 
-`simorph_core::ComponentManifest` est la définition normative ; le schéma JSON
-est exporté dans `schemas/component_manifest.schema.json`. Les adaptateurs
-(`adapters/`) produisent ce manifeste pour les outils qui ne peuvent pas le
-fournir eux-mêmes (FMU, scripts Python, services HTTP).
+### 17. Génération, compilation et exécution sécurisée de code
+* Responsabilités : exécution de code généré en sous-processus avec limites
+  système réelles (rlimits CPU, mémoire, fichiers, processus), espace de noms
+  réseau isolé, environnement nettoyé, répertoire jetable, délais, plafonds
+  de sortie ; compilation contrôlée ; conteneurs en production.
+* Crates : `simorph-execution`, `simorph-security`.
 
-## 6. Infrastructure (§10)
+### 18. Interface interactive de laboratoire
+* Responsabilités : espaces Projet, Recherche, Modélisation, Simulation,
+  Optimisation, IA, Validation, Journal, Export ; visualisation Plotly et
+  Three.js ; suivi en direct ; seules les actions implémentées sont visibles.
+* Crates : `apps/web`, `apps/cli`.
 
-* Local : `cargo run -p simorph-cli`, `cargo run -p simorph-web` ; stockage
-  JSON-lines/DuckDB ; modèles locaux via llama.cpp/vLLM derrière l'interface
-  `Reasoner`.
-* Distribué : ordonnanceur multi-nœuds via Ray (adaptateur) ou Kubernetes
-  Jobs ; files de travaux persistées ; reprise par `snapshot()/resume()`.
-* Cloud : manifestes `infrastructure/` (docker-compose, Kubernetes), stockage
-  objet pour artefacts, PostgreSQL pour le registre, Qdrant pour la mémoire
-  vectorielle, OpenTelemetry pour l'observabilité, gestion des secrets par
-  variables d'environnement injectées (jamais dans le code).
+### 19. Connecteurs vers données, instruments et environnements réels
+* Responsabilités : sources de données à unités (CSV, JSON-lines, HTTP),
+  instruments (lecture, consigne protégée par approbation humaine), rejeu
+  d'enregistrements, transport série/SCPI, observations pour calibration.
+* Crate : `simorph-connectors`.
 
-## 7. Sécurité (§10.4)
+### 20. Boucle d'amélioration continue
+* Responsabilités : identifier les limites d'un modèle, concevoir les
+  expériences, produire et valider les données, entraîner sous contrôle,
+  comparer avant/après sur suite scellée, conserver les gains démontrés,
+  rejeter les dégradations, revenir en arrière ; témoin négatif obligatoire.
+* Crates : `services/improvement-loop`, `services/ai-laboratory`.
 
-Modèle complet dans `SECURITY_MODEL.md`. Invariants vérifiés par tests :
-un agent autonome n'obtient jamais `ExternalSideEffect` ni `SelfModify` sans
-approbation humaine signée ; les références protégées sont immuables sans
-Admin + approbation ; le code généré s'exécute en sous-processus avec délai,
-plafond de sortie, environnement nettoyé, puis en conteneur en production.
+## 4. Flux principal
 
-## 8. Ce qui reste de la recherche
+1. Texte, fichiers ou `ProblemSpec` entrent par l'interface (18).
+2. L'Interprète (3) produit un `ProblemSpec` et ses ambiguïtés.
+3. Le Planificateur (9) analyse, formule les hypothèses et fige les critères.
+4. Le Modélisateur (4, 5) assemble ou génère les modèles et simulateurs.
+5. L'Expérimentateur (9) exécute via le noyau (1), localement ou sur workers (16).
+6. Le Validateur (13, 14) accorde les niveaux de preuve ; personne d'autre.
+7. Le Critique (2) propose réplications, haute fidélité ou reformulation.
+8. L'Archiviste (15) alimente la mémoire ; la boucle (20) exploite les
+   données validées pour améliorer les modèles d'IA.
 
-`RESEARCH_REQUIREMENTS.md` liste les capacités exigées par le cahier des
-charges qui ne sont pas scientifiquement acquises (génération autonome fiable
-de simulateurs pour des physiques nouvelles, auto-amélioration démontrée des
-capacités de raisonnement, vérification formelle automatique de résultats
-numériques, etc.). Elles sont des exigences de recherche documentées, jamais
-présentées comme acquises.
+## 5. Frontières de confiance
+
+| Zone | Contenu | Peut modifier |
+|---|---|---|
+| Protégée | suites scellées, références de validation, critères hachés, politique RBAC, clés | Admin + approbation humaine |
+| Noyau | crates Rust, services | revue humaine (git) |
+| Bac à sable | code généré, scripts Python, programmes évolués | rien hors de son répertoire jetable |
+| Externe | instruments, API, déploiements | uniquement avec `ExternalSideEffect` approuvé |

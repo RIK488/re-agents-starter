@@ -435,8 +435,11 @@ fn nanosat_cosimulation_runs_one_orbit() {
     let dt = tr.times[1] - tr.times[0];
     let p_net = tr.signal("battery.power_net").unwrap();
     let supplied: f64 = p_net.iter().skip(1).map(|v| v * dt).sum();
+    // Normalise by the gross energy throughput: the net energy over one orbit
+    // can be close to zero, which would make a relative error meaningless.
+    let throughput: f64 = p_net.iter().skip(1).map(|v| v.abs() * dt).sum();
     assert!(
-        ((e_stored + e_loss - supplied) / supplied.abs().max(1.0)).abs() < 0.05,
+        ((e_stored + e_loss - supplied) / throughput.max(1.0)).abs() < 0.05,
         "energy budget: stored {e_stored} + loss {e_loss} vs supplied {supplied}"
     );
     let power = tr.signal("solar.power").unwrap();

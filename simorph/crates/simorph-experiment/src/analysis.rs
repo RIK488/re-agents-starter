@@ -14,9 +14,22 @@ pub struct CounterExample {
     pub evaluations: usize,
 }
 
+/// Outcome of a counter-example search with its error accounting.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CounterExampleSearch {
+    pub counter_example: Option<CounterExample>,
+    pub evaluations: usize,
+    /// Evaluations whose run failed (skipped for the predicate).
+    pub errors: usize,
+    /// First error message, if any.
+    pub first_error: Option<String>,
+}
+
 /// Search (Latin hypercube batches of `batch`) for an input where
 /// `predicate(result)` is false, i.e. a violation.  Returns the first
-/// violation found or `None` after `max_evaluations`.
+/// violation found or `None` after `max_evaluations`.  Returns an error when
+/// every evaluation failed (no evidence either way); see
+/// [`search_counter_example`] for the error count.
 pub fn find_counter_example<F>(
     component: &dyn Component,
     factors: Vec<Factor>,
@@ -30,7 +43,44 @@ pub fn find_counter_example<F>(
 where
     F: Fn(&TaskResult) -> bool,
 {
+    let s = search_counter_example(
+        component,
+        factors,
+        fixed_inputs,
+        predicate,
+        max_evaluations,
+        batch,
+        seed,
+        ctl,
+    )?;
+    if s.counter_example.is_none() && s.evaluations > 0 && s.errors == s.evaluations {
+        return Err(simorph_core::SimorphError::Validation(format!(
+            "counter-example search inconclusive: all {} evaluations failed (first error: {})",
+            s.evaluations,
+            s.first_error.unwrap_or_default()
+        )));
+    }
+    Ok(s.counter_example)
+}
+
+/// Counter-example search reporting how many evaluations failed.
+#[allow(clippy::too_many_arguments)]
+pub fn search_counter_example<F>(
+    component: &dyn Component,
+    factors: Vec<Factor>,
+    fixed_inputs: &IndexMap<String, serde_json::Value>,
+    predicate: F,
+    max_evaluations: usize,
+    batch: usize,
+    seed: u64,
+    ctl: &ExecutionControl,
+) -> Result<CounterExampleSearch>
+where
+    F: Fn(&TaskResult) -> bool,
+{
     let mut evaluated = 0usize;
+    let mut errors = 0usize;
+    let mut first_error = None;
     let mut round = 0u64;
     let batch = batch.max(1);
     while evaluated < max_evaluations {
@@ -53,27 +103,37 @@ where
             match run_component(component, &req, ctl) {
                 Ok(res) => {
                     if !predicate(&res) {
-                        return Ok(Some(CounterExample {
-                            inputs: req.inputs,
-                            result: res,
+                        return Ok(CounterExampleSearch {
+                            counter_example: Some(CounterExample {
+                                inputs: req.inputs,
+                                result: res,
+                                evaluations: evaluated,
+                            }),
                             evaluations: evaluated,
-                        }));
+                            errors,
+                            first_error,
+                        });
                     }
                 }
                 Err(simorph_core::SimorphError::Cancelled) => {
                     return Err(simorph_core::SimorphError::Cancelled)
                 }
-                Err(_) => {
-                    // A failing run is itself a counter-example to "the component
-                    // works on this domain", but the caller asked about the
-                    // predicate; failures are skipped here and surfaced by
-                    // `rank_failure_causes` on experiment records.
+                Err(e) => {
+                    errors += 1;
+                    if first_error.is_none() {
+                        first_error = Some(e.to_string());
+                    }
                 }
             }
         }
         round += 1;
     }
-    Ok(None)
+    Ok(CounterExampleSearch {
+        counter_example: None,
+        evaluations: evaluated,
+        errors,
+        first_error,
+    })
 }
 
 /// Association between a factor and the failure/violation flag.

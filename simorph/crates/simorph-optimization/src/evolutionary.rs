@@ -39,8 +39,34 @@ fn round_integers(x: &mut [f64], ints: &[usize]) {
     }
 }
 
+/// Bound handling for DE: a component that leaves the box is placed at a
+/// uniformly random point between the violated bound and the parent's value
+/// ("bounce-back").  Clamping, used before, piles trial points exactly on the
+/// bounds and made the population collapse onto a bound far from an interior
+/// optimum (audit).
+fn bounce_back(trial: &mut [f64], parent: &[f64], bounds: &[(f64, f64)], rng: &mut impl rand::Rng) {
+    for j in 0..trial.len() {
+        let (lo, hi) = bounds[j];
+        let par = parent[j].clamp(lo, hi);
+        if !(trial[j] >= lo) {
+            trial[j] = lo + rng.gen::<f64>() * (par - lo);
+        } else if trial[j] > hi {
+            trial[j] = hi - rng.gen::<f64>() * (hi - par);
+        }
+    }
+}
+
 /// Differential evolution.  Constraints are handled with Deb's rules.
 pub fn differential_evolution(
+    p: &dyn ObjectiveFunction,
+    opts: &DeOptions,
+    budget: &Budget,
+    ctl: &ExecutionControl,
+) -> Result<OptimizationResult> {
+    crate::problem::guarded(p, budget, Method::DifferentialEvolution, |g| differential_evolution_impl(g, opts, budget, ctl))
+}
+
+fn differential_evolution_impl(
     p: &dyn ObjectiveFunction,
     opts: &DeOptions,
     budget: &Budget,
@@ -79,6 +105,14 @@ pub fn differential_evolution(
         if evals.len() < np {
             pop.truncate(evals.len());
         }
+        // audit: with a budget smaller than the population the initial
+        // evaluations were discarded and DE returned an error.
+        if let Some(bi) = (0..evals.len()).min_by(|&a, &b| deb_compare(&evals[a], &evals[b])) {
+            match &global_best {
+                Some((_, ge)) if deb_compare(ge, &evals[bi]) != Ordering::Greater => {}
+                _ => global_best = Some((pop[bi].clone(), evals[bi].clone())),
+            }
+        }
         let mut stagnation = 0usize;
         let mut last_best = f64::INFINITY;
         while c.count() + pop.len() <= budget.max_evaluations && iterations < budget.max_iterations
@@ -108,7 +142,7 @@ pub fn differential_evolution(
                         trial[j] = pop[idx[0]][j] + fw * (pop[idx[1]][j] - pop[idx[2]][j]);
                     }
                 }
-                clamp_to_bounds(&mut trial, &bounds);
+                bounce_back(&mut trial, &pop[i], &bounds, &mut rng);
                 round_integers(&mut trial, &ints);
                 let te = c.eval(&trial)?;
                 if deb_compare(&te, &evals[i]) != Ordering::Greater {
@@ -204,6 +238,16 @@ impl Default for CmaOptions {
 /// CMA-ES (Hansen) with full covariance, rank-μ update, cumulative step-size
 /// adaptation and IPOP restarts.  Constraints via Deb's rules for ranking.
 pub fn cma_es(
+    p: &dyn ObjectiveFunction,
+    x0: Option<&[f64]>,
+    opts: &CmaOptions,
+    budget: &Budget,
+    ctl: &ExecutionControl,
+) -> Result<OptimizationResult> {
+    crate::problem::guarded(p, budget, Method::CmaEs, |g| cma_es_impl(g, x0, opts, budget, ctl))
+}
+
+fn cma_es_impl(
     p: &dyn ObjectiveFunction,
     x0: Option<&[f64]>,
     opts: &CmaOptions,

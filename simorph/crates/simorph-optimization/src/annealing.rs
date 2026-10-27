@@ -32,6 +32,16 @@ pub fn simulated_annealing(
     budget: &Budget,
     ctl: &ExecutionControl,
 ) -> Result<OptimizationResult> {
+    crate::problem::guarded(p, budget, Method::SimulatedAnnealing, |g| simulated_annealing_impl(g, x0, opts, budget, ctl))
+}
+
+fn simulated_annealing_impl(
+    p: &dyn ObjectiveFunction,
+    x0: Option<&[f64]>,
+    opts: &SaOptions,
+    budget: &Budget,
+    ctl: &ExecutionControl,
+) -> Result<OptimizationResult> {
     let d = check_dim(p)?;
     let bounds = p.bounds();
     let c = Counted::new(p);

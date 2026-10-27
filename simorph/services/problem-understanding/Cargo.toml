@@ -1,0 +1,22 @@
+[package]
+name = "simorph-svc-problem-understanding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Natural-language (FR/EN) problem understanding for SIMORPH: deterministic extraction of quantities, roles and component ports into a ProblemSpec draft with explicit ambiguities; optional LLM proposer re-validated deterministically."
+
+[dependencies]
+simorph-core = { path = "../../crates/simorph-core" }
+simorph-units = { path = "../../crates/simorph-units" }
+serde.workspace = true
+serde_json.workspace = true
+ureq = { version = "2.12", features = ["json"] }
+
+[dev-dependencies]
+simorph-plugin-physics = { path = "../../plugins/physics" }
+simorph-plugin-engineering = { path = "../../plugins/engineering" }
+simorph-plugin-ai = { path = "../../plugins/ai" }
+simorph-plugin-sdk = { path = "../../crates/simorph-plugin-sdk" }
+simorph-provenance = { path = "../../crates/simorph-provenance" }
+simorph-svc-campaign-runtime = { path = "../campaign-runtime" }
+simorph-svc-scientific-director = { path = "../scientific-director" }

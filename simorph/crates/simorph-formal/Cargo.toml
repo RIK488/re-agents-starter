@@ -1,0 +1,19 @@
+[package]
+name = "simorph-formal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SIMORPH formal and symbolic verification (subsystem 13): SMT proofs with Z3 and independent re-checks, SymPy symbolic checks, verified-rounding interval arithmetic, Lean 4 backend, integration with evidence classification."
+
+[dependencies]
+simorph-core = { path = "../simorph-core" }
+simorph-units = { path = "../simorph-units" }
+simorph-validation = { path = "../simorph-validation" }
+simorph-security = { path = "../simorph-security" }
+simorph-adapter-python-bridge = { path = "../../adapters/python-bridge" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+simorph-plugin-engineering = { path = "../../plugins/engineering" }

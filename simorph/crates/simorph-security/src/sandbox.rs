@@ -1,15 +1,20 @@
 //! Declarative sandbox policy for generated or external code.
 //!
-//! What this crate enforces itself (through `simorph-execution`): wall-clock
-//! timeout (process kill), output size cap, environment scrubbing (only
-//! allow-listed variables are passed), working directory.
+//! What `simorph-execution` enforces itself on Linux (see its `isolation`
+//! module): wall-clock timeout (process-group kill), output size cap,
+//! environment scrubbing (only allow-listed variables are passed), working
+//! directory, kernel resource limits (`RLIMIT_DATA` from `max_memory_mb`,
+//! `RLIMIT_CPU` from `max_process_cpu_s`, `RLIMIT_FSIZE` from
+//! `max_file_bytes`, `RLIMIT_CORE = 0`), and network isolation in a fresh,
+//! empty network namespace when `network` is false (fail-closed when
+//! `require_os_isolation` is set and the namespace cannot be created).
 //!
 //! What must be enforced by the deployment layer and is *not* claimed here:
-//! network isolation, filesystem read-only/writable mounts, CPU and memory
-//! limits.  In production these are mapped onto container runtimes
-//! (`--network none`, bind mounts, cgroup limits) or Wasm sandboxes; the
-//! [`SandboxPolicy::to_container_args`] helper produces the corresponding
-//! OCI runtime flags so that the same policy object drives both layers.
+//! filesystem read-only/writable mounts and process-count limits (RLIMIT_NPROC
+//! is per user and ineffective for root).  In production these are mapped onto
+//! container runtimes (bind mounts, cgroup `pids.max`) or Wasm sandboxes; the
+//! [`SandboxPolicy::to_container_args`] helper produces the corresponding OCI
+//! runtime flags so that the same policy object drives both layers.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -23,11 +28,24 @@ pub struct SandboxPolicy {
     pub network: bool,
     pub writable_paths: Vec<PathBuf>,
     pub read_only_paths: Vec<PathBuf>,
-    /// CPU time limit in seconds (0 = unlimited).  Enforced as wall-clock
-    /// timeout by the subprocess runner.
+    /// Per-request wall-clock limit in seconds (0 = unlimited): the child is
+    /// killed when one request takes longer.
     pub max_cpu_s: f64,
-    /// Memory limit in MB (0 = unlimited; container layer only).
+    /// Data-segment memory limit in MB (`RLIMIT_DATA`: heap, anonymous
+    /// mappings, thread stacks); 0 = unlimited.
     pub max_memory_mb: u64,
+    /// CPU-time budget of the whole child process lifetime in seconds
+    /// (`RLIMIT_CPU`); 0 = unlimited.  Warm children serve several requests,
+    /// so this is a lifetime budget, distinct from `max_cpu_s`.
+    #[serde(default)]
+    pub max_process_cpu_s: f64,
+    /// Largest file the child may create, in bytes (`RLIMIT_FSIZE`); 0 = unlimited.
+    #[serde(default = "default_file_bytes")]
+    pub max_file_bytes: u64,
+    /// Refuse to start the child if the requested OS isolation (network
+    /// namespace, resource limits) cannot be applied.
+    #[serde(default = "default_true")]
+    pub require_os_isolation: bool,
     /// Maximum bytes read from the child's stdout before it is killed.
     pub max_output_bytes: u64,
     /// Environment variables passed through to the child.
@@ -35,6 +53,14 @@ pub struct SandboxPolicy {
     /// Working directory for the child (must be inside `writable_paths`
     /// when the latter is non-empty).
     pub working_dir: Option<PathBuf>,
+}
+
+fn default_file_bytes() -> u64 {
+    1 << 30
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SandboxPolicy {
@@ -52,6 +78,9 @@ impl SandboxPolicy {
             read_only_paths: vec![],
             max_cpu_s: 60.0,
             max_memory_mb: 2048,
+            max_process_cpu_s: 0.0,
+            max_file_bytes: default_file_bytes(),
+            require_os_isolation: true,
             max_output_bytes: 16 * 1024 * 1024,
             env_allowlist: vec![
                 "PATH".into(),
@@ -80,11 +109,28 @@ impl SandboxPolicy {
         self.max_output_bytes = bytes;
         self
     }
+    pub fn with_memory_mb(mut self, mb: u64) -> Self {
+        self.max_memory_mb = mb;
+        self
+    }
+    pub fn with_process_cpu_s(mut self, s: f64) -> Self {
+        self.max_process_cpu_s = s;
+        self
+    }
+    pub fn with_max_file_bytes(mut self, b: u64) -> Self {
+        self.max_file_bytes = b;
+        self
+    }
+    /// Allow network egress (the child shares the host network namespace).
+    pub fn with_network(mut self) -> Self {
+        self.network = true;
+        self
+    }
 
     /// Structural validation.
     pub fn validate(&self) -> Result<()> {
-        if self.max_cpu_s < 0.0 {
-            return Err(SimorphError::InvalidInput("max_cpu_s must be >= 0".into()));
+        if self.max_cpu_s < 0.0 || self.max_process_cpu_s < 0.0 {
+            return Err(SimorphError::InvalidInput("CPU limits must be >= 0".into()));
         }
         if self.max_output_bytes == 0 {
             return Err(SimorphError::InvalidInput(

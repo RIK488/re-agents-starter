@@ -13,5 +13,6 @@ schemars.workspace = true
 chrono.workspace = true
 sha2.workspace = true
 hex.workspace = true
+hmac.workspace = true
 parking_lot.workspace = true
 uuid.workspace = true

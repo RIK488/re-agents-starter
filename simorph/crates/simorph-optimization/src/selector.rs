@@ -293,7 +293,7 @@ impl MethodSelector {
 
 fn rank(mut v: Vec<MethodRecommendation>) -> Vec<MethodRecommendation> {
     v.retain(|r| r.score > 0.0);
-    v.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    v.sort_by(|a, b| b.score.total_cmp(&a.score));
     v
 }
 
