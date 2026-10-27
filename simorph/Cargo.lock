@@ -1378,7 +1378,17 @@ dependencies = [
 name = "simorph-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
+ "serde_json",
+ "simorph-cli",
  "simorph-core",
+ "simorph-plugin-physics",
+ "simorph-provenance",
+ "simorph-svc-knowledge-service",
+ "simorph-svc-model-factory",
+ "simorph-svc-scientific-director",
+ "simorph-units",
+ "simorph-validation",
 ]
 
 [[package]]

@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskResult",
+  "description": "Outputs of a task.",
+  "type": "object",
+  "required": [
+    "component",
+    "evidence",
+    "outputs",
+    "request_hash",
+    "run_id"
+  ],
+  "properties": {
+    "component": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "evidence": {
+      "description": "Epistemic level the component itself claims for its outputs.  The validation engine may *lower* this; it can never be raised here.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/EvidenceLevel"
+        }
+      ]
+    },
+    "metrics": {
+      "description": "Metrics published by the component (wall time, iterations, residuals…).",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "request_hash": {
+      "description": "Hash of the request that produced this result.",
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "wall_time_ms": {
+      "default": 0,
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "warnings": {
+      "description": "Free-form warnings (e.g. \"left validity domain at t=42s\").",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "EvidenceLevel": {
+      "description": "Epistemic status of a result or claim.",
+      "oneOf": [
+        {
+          "description": "A conjecture that has not been checked by any means.",
+          "type": "string",
+          "enum": [
+            "unverified_hypothesis"
+          ]
+        },
+        {
+          "description": "Obtained by direct computation from a closed-form or exact method (e.g. analytic formula, exact arithmetic, deterministic algorithm).",
+          "type": "string",
+          "enum": [
+            "computed"
+          ]
+        },
+        {
+          "description": "Obtained by numerical simulation of a model.  Subject to model error and numerical error.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Compared against experimental / observational reference data within a declared tolerance.",
+          "type": "string",
+          "enum": [
+            "empirically_validated"
+          ]
+        },
+        {
+          "description": "Backed by a machine-checked or peer-reviewed mathematical proof.",
+          "type": "string",
+          "enum": [
+            "mathematically_proven"
+          ]
+        }
+      ]
+    }
+  }
+}

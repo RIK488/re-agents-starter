@@ -1,0 +1,918 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ComponentManifest",
+  "description": "The universal manifest.",
+  "type": "object",
+  "required": [
+    "capabilities",
+    "deterministic_mode",
+    "execution_interface",
+    "id",
+    "input_schema",
+    "license",
+    "name",
+    "numerical_precision",
+    "output_schema",
+    "provider",
+    "supported_domains",
+    "uncertainty_model",
+    "version"
+  ],
+  "properties": {
+    "assumptions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Capability"
+      }
+    },
+    "dependencies": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "deterministic_mode": {
+      "$ref": "#/definitions/DeterministicMode"
+    },
+    "execution_interface": {
+      "$ref": "#/definitions/ExecutionInterface"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "input_schema": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Port"
+      }
+    },
+    "license": {
+      "description": "SPDX license identifier or free text.",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "numerical_precision": {
+      "$ref": "#/definitions/NumericalPrecision"
+    },
+    "output_schema": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Port"
+      }
+    },
+    "provenance": {
+      "default": {
+        "build_hash": null,
+        "citation": null,
+        "commit": null,
+        "generated_by": null,
+        "source_repository": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ComponentProvenance"
+        }
+      ]
+    },
+    "provider": {
+      "type": "string"
+    },
+    "resource_requirements": {
+      "default": {
+        "cpu_cores": 0.0,
+        "disk_mb": 0,
+        "gpu_count": 0,
+        "gpu_memory_mb": 0,
+        "memory_mb": 0,
+        "network": false,
+        "wall_time_s": 0.0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResourceRequirements"
+        }
+      ]
+    },
+    "security_permissions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    },
+    "supported_domains": {
+      "description": "Domain tags, e.g. `\"aerospace\"`, `\"thermal\"`, `\"ml\"`.  Free-form by design: no domain is hard-coded in the core.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "uncertainty_model": {
+      "$ref": "#/definitions/UncertaintyModel"
+    },
+    "units": {
+      "description": "Unit expressions used by the component, keyed by port name.  Allows the validation engine to check dimensional consistency.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "validation_protocol": {
+      "default": {
+        "convergence_order": null,
+        "invariants": [],
+        "reference_cases": []
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ValidationProtocol"
+        }
+      ]
+    },
+    "validity_domain": {
+      "default": {
+        "conditions": [],
+        "ranges": {}
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ValidityDomain"
+        }
+      ]
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "Capability": {
+      "description": "Kind of computational capability a component offers.",
+      "oneOf": [
+        {
+          "description": "Time-domain integration of ordinary differential equations.",
+          "type": "string",
+          "enum": [
+            "ode_integration"
+          ]
+        },
+        {
+          "description": "Differential-algebraic systems.",
+          "type": "string",
+          "enum": [
+            "dae_integration"
+          ]
+        },
+        {
+          "description": "Partial differential equations (field problems).",
+          "type": "string",
+          "enum": [
+            "pde_solver"
+          ]
+        },
+        {
+          "description": "Algebraic / root-finding systems.",
+          "type": "string",
+          "enum": [
+            "algebraic_solver"
+          ]
+        },
+        {
+          "description": "Linear algebra kernels.",
+          "type": "string",
+          "enum": [
+            "linear_algebra"
+          ]
+        },
+        {
+          "description": "Discrete-event simulation.",
+          "type": "string",
+          "enum": [
+            "discrete_event"
+          ]
+        },
+        {
+          "description": "Agent-based / multi-agent simulation.",
+          "type": "string",
+          "enum": [
+            "multi_agent"
+          ]
+        },
+        {
+          "description": "Rigid or soft body dynamics.",
+          "type": "string",
+          "enum": [
+            "physics_engine"
+          ]
+        },
+        {
+          "description": "Sampling from probabilistic models.",
+          "type": "string",
+          "enum": [
+            "probabilistic_inference"
+          ]
+        },
+        {
+          "description": "Optimisation (see `OptimisationFamily` in `simorph-optimization`).",
+          "type": "string",
+          "enum": [
+            "optimisation"
+          ]
+        },
+        {
+          "description": "Uncertainty quantification / sensitivity analysis.",
+          "type": "string",
+          "enum": [
+            "uncertainty_quantification"
+          ]
+        },
+        {
+          "description": "Symbolic mathematics.",
+          "type": "string",
+          "enum": [
+            "symbolic_math"
+          ]
+        },
+        {
+          "description": "Formal proof / SMT.",
+          "type": "string",
+          "enum": [
+            "formal_verification"
+          ]
+        },
+        {
+          "description": "Model training (machine learning).",
+          "type": "string",
+          "enum": [
+            "training"
+          ]
+        },
+        {
+          "description": "Model evaluation / benchmarking.",
+          "type": "string",
+          "enum": [
+            "evaluation"
+          ]
+        },
+        {
+          "description": "Inference serving.",
+          "type": "string",
+          "enum": [
+            "inference"
+          ]
+        },
+        {
+          "description": "Data storage and retrieval.",
+          "type": "string",
+          "enum": [
+            "data_store"
+          ]
+        },
+        {
+          "description": "Visualisation / rendering.",
+          "type": "string",
+          "enum": [
+            "visualisation"
+          ]
+        },
+        {
+          "description": "Co-simulation slave (FMI-like step/exchange interface).",
+          "type": "string",
+          "enum": [
+            "cosimulation_slave"
+          ]
+        },
+        {
+          "description": "Anything not covered above.  The string is a free-form tag.",
+          "type": "object",
+          "required": [
+            "other"
+          ],
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ComponentProvenance": {
+      "description": "Provenance of the component itself (not of its outputs).",
+      "type": "object",
+      "properties": {
+        "build_hash": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "citation": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generated_by": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_repository": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "DeterministicMode": {
+      "description": "Whether and how the component can be made bit-for-bit deterministic.",
+      "oneOf": [
+        {
+          "description": "Always deterministic for a given input and seed.",
+          "type": "string",
+          "enum": [
+            "always"
+          ]
+        },
+        {
+          "description": "Deterministic only when a seed is supplied.",
+          "type": "string",
+          "enum": [
+            "with_seed"
+          ]
+        },
+        {
+          "description": "Deterministic only with a specific configuration (described).",
+          "type": "object",
+          "required": [
+            "conditional"
+          ],
+          "properties": {
+            "conditional": {
+              "type": "object",
+              "required": [
+                "description"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Cannot be made deterministic (e.g. hardware non-determinism).",
+          "type": "string",
+          "enum": [
+            "never"
+          ]
+        }
+      ]
+    },
+    "ExecutionInterface": {
+      "description": "How the component is invoked.",
+      "oneOf": [
+        {
+          "description": "Native Rust implementation registered in-process.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "in_process"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Child process speaking the SIMORPH JSON-lines protocol over stdio.",
+          "type": "object",
+          "required": [
+            "command",
+            "kind"
+          ],
+          "properties": {
+            "args": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "command": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "subprocess"
+              ]
+            }
+          }
+        },
+        {
+          "description": "HTTP/JSON endpoint.",
+          "type": "object",
+          "required": [
+            "base_url",
+            "kind"
+          ],
+          "properties": {
+            "base_url": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "http"
+              ]
+            }
+          }
+        },
+        {
+          "description": "gRPC endpoint.",
+          "type": "object",
+          "required": [
+            "endpoint",
+            "kind"
+          ],
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "grpc"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Python module loaded through the python bridge.",
+          "type": "object",
+          "required": [
+            "kind",
+            "module"
+          ],
+          "properties": {
+            "entrypoint": {
+              "default": "",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "python"
+              ]
+            },
+            "module": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "FMI Functional Mock-up Unit.",
+          "type": "object",
+          "required": [
+            "fmi_version",
+            "kind",
+            "path"
+          ],
+          "properties": {
+            "fmi_version": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "fmu"
+              ]
+            },
+            "path": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "WebAssembly component.",
+          "type": "object",
+          "required": [
+            "kind",
+            "path"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "wasm"
+              ]
+            },
+            "path": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "Containerised component.",
+          "type": "object",
+          "required": [
+            "image",
+            "kind"
+          ],
+          "properties": {
+            "command": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "image": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "container"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "NumericalPrecision": {
+      "description": "Declared numerical precision.",
+      "type": "string",
+      "enum": [
+        "float16",
+        "float32",
+        "float64",
+        "float128",
+        "arbitrary_precision",
+        "exact",
+        "mixed"
+      ]
+    },
+    "Permission": {
+      "description": "Security permissions a component requests.  The security crate decides whether they are granted; components never grant themselves anything.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "read_workspace",
+            "write_workspace",
+            "network_egress",
+            "spawn_process",
+            "gpu",
+            "read_secrets"
+          ]
+        },
+        {
+          "description": "Any action affecting the physical world or external services with side effects (actuators, purchases, deployments).  Never granted automatically to autonomous agents.",
+          "type": "string",
+          "enum": [
+            "external_side_effect"
+          ]
+        },
+        {
+          "description": "Modify SIMORPH's own code or configuration.",
+          "type": "string",
+          "enum": [
+            "self_modify"
+          ]
+        }
+      ]
+    },
+    "Port": {
+      "description": "A named variable port of a model/component (input or output).",
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "range": {
+          "description": "Optional validity range in the declared unit.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "shape": {
+          "description": "Shape of the value: `[]` scalar, `[3]` vector, `[3,3]` matrix …",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "ReferenceCase": {
+      "type": "object",
+      "required": [
+        "atol",
+        "expected_outputs",
+        "inputs",
+        "name",
+        "rtol",
+        "source"
+      ],
+      "properties": {
+        "atol": {
+          "description": "Absolute tolerance.",
+          "type": "number",
+          "format": "double"
+        },
+        "expected_outputs": true,
+        "inputs": true,
+        "name": {
+          "type": "string"
+        },
+        "rtol": {
+          "description": "Relative tolerance.",
+          "type": "number",
+          "format": "double"
+        },
+        "source": {
+          "description": "Where the reference comes from (analytic formula, paper, measurement).",
+          "type": "string"
+        }
+      }
+    },
+    "ResourceRequirements": {
+      "description": "Hardware / software resources needed to run a component.",
+      "type": "object",
+      "properties": {
+        "cpu_cores": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "disk_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "gpu_count": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "gpu_memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "network": {
+          "description": "Whether network egress is required.",
+          "default": false,
+          "type": "boolean"
+        },
+        "wall_time_s": {
+          "description": "Expected wall-clock upper bound per task, in seconds (0 = unknown).",
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "UncertaintyModel": {
+      "description": "Declared uncertainty model of the component outputs.",
+      "oneOf": [
+        {
+          "description": "Component does not quantify its own uncertainty.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "none"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component reports a global relative error bound.",
+          "type": "object",
+          "required": [
+            "kind",
+            "rtol"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "relative_error_bound"
+              ]
+            },
+            "rtol": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Component reports per-output standard deviations.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "per_output_std_dev"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component returns samples / ensembles.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "ensemble"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component returns an interval per output.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Free text description.",
+          "type": "object",
+          "required": [
+            "description",
+            "kind"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "described"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ValidationProtocol": {
+      "description": "Validation protocol declared by the component: how its outputs can be checked (reference cases, analytic solutions, tolerances).",
+      "type": "object",
+      "properties": {
+        "convergence_order": {
+          "description": "Expected order of convergence for discretisation parameters, if any.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "invariants": {
+          "description": "Invariants that must hold on every output (free-form expressions evaluated by the validation engine, e.g. `\"energy_drift < 1e-6\"`).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference_cases": {
+          "description": "Named reference cases with expected outputs.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ReferenceCase"
+          }
+        }
+      }
+    },
+    "ValidityDomain": {
+      "description": "Declared validity domain: per-parameter ranges and textual conditions.",
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "description": "Conditions that cannot be expressed as ranges.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ranges": {
+          "description": "Parameter name -> (min, max) in the parameter's declared unit.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      }
+    }
+  }
+}

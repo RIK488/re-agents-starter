@@ -21,6 +21,10 @@ pub struct RunSummary {
     pub validation: Option<ValidationId>,
     pub valid: bool,
     pub error: Option<String>,
+    /// True for runs of a component's declared reference cases: they verify
+    /// the tool, not the problem, and never feed conclusions.
+    #[serde(default)]
+    pub reference_case: bool,
 }
 
 /// Outcome of an executed experiment.
@@ -458,7 +462,7 @@ impl Campaign {
             .outcomes
             .iter()
             .flat_map(|o| o.runs.iter().cloned())
-            .filter(|r| r.valid)
+            .filter(|r| r.valid && !r.reference_case)
             .collect();
         let mut conclusions = vec![];
         for (var, unit, dir) in targets {
@@ -717,6 +721,7 @@ mod tests {
                     validation: Some(ValidationId::new()),
                     valid: true,
                     error: None,
+                    reference_case: false,
                 });
             }
             Ok(ExperimentOutcome {

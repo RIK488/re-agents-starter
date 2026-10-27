@@ -1,0 +1,236 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ValidationRecord",
+  "description": "A complete validation record.",
+  "type": "object",
+  "required": [
+    "checks",
+    "claimed",
+    "id",
+    "rationale",
+    "target",
+    "timestamp",
+    "verdict"
+  ],
+  "properties": {
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CheckResult"
+      }
+    },
+    "claimed": {
+      "description": "Level the producer claimed.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/EvidenceLevel"
+        }
+      ]
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "protected_reference_hash": {
+      "description": "Hash of the sealed reference set used, if any.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rationale": {
+      "description": "Why the verdict is what it is.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "target": {
+      "$ref": "#/definitions/ValidationTarget"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verdict": {
+      "description": "Level the validator grants.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/EvidenceLevel"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "CheckResult": {
+      "description": "Outcome of one check.",
+      "type": "object",
+      "required": [
+        "details",
+        "name",
+        "passed"
+      ],
+      "properties": {
+        "details": {
+          "type": "string"
+        },
+        "metrics": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "EvidenceLevel": {
+      "description": "Epistemic status of a result or claim.",
+      "oneOf": [
+        {
+          "description": "A conjecture that has not been checked by any means.",
+          "type": "string",
+          "enum": [
+            "unverified_hypothesis"
+          ]
+        },
+        {
+          "description": "Obtained by direct computation from a closed-form or exact method (e.g. analytic formula, exact arithmetic, deterministic algorithm).",
+          "type": "string",
+          "enum": [
+            "computed"
+          ]
+        },
+        {
+          "description": "Obtained by numerical simulation of a model.  Subject to model error and numerical error.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Compared against experimental / observational reference data within a declared tolerance.",
+          "type": "string",
+          "enum": [
+            "empirically_validated"
+          ]
+        },
+        {
+          "description": "Backed by a machine-checked or peer-reviewed mathematical proof.",
+          "type": "string",
+          "enum": [
+            "mathematically_proven"
+          ]
+        }
+      ]
+    },
+    "ValidationTarget": {
+      "description": "What a validation record is about.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "run_id"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "run"
+              ]
+            },
+            "run_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "experiment_id",
+            "kind"
+          ],
+          "properties": {
+            "experiment_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "experiment"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "statement"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "claim"
+              ]
+            },
+            "statement": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "version"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "component"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "name"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "model"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,364 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProblemAnalysis",
+  "type": "object",
+  "required": [
+    "assessments",
+    "comparison_criteria",
+    "dimensional_issues",
+    "disciplines",
+    "improvement_opportunities",
+    "problem_id",
+    "solution_candidates"
+  ],
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/QuantityAssessment"
+      }
+    },
+    "comparison_criteria": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ComparisonCriterion"
+      }
+    },
+    "dimensional_issues": {
+      "description": "Unit problems found in the specification (objective/constraint units incompatible with producing ports).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "disciplines": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "improvement_opportunities": {
+      "description": "Suggested improvements to models/tools/methods (§2 item 11).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problem_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "solution_candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SolutionCandidate"
+      }
+    }
+  },
+  "definitions": {
+    "ComparisonCriterion": {
+      "description": "Objective comparison criterion fixed before any experiment runs.",
+      "type": "object",
+      "required": [
+        "direction",
+        "hard_constraints",
+        "name",
+        "unit",
+        "variable",
+        "weight"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "hard_constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Direction": {
+      "description": "Direction of an objective.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "minimize",
+            "maximize"
+          ]
+        },
+        {
+          "description": "Reach a target value (treated as minimising |f - target|).",
+          "type": "string",
+          "enum": [
+            "target"
+          ]
+        }
+      ]
+    },
+    "EvidenceLevel": {
+      "description": "Epistemic status of a result or claim.",
+      "oneOf": [
+        {
+          "description": "A conjecture that has not been checked by any means.",
+          "type": "string",
+          "enum": [
+            "unverified_hypothesis"
+          ]
+        },
+        {
+          "description": "Obtained by direct computation from a closed-form or exact method (e.g. analytic formula, exact arithmetic, deterministic algorithm).",
+          "type": "string",
+          "enum": [
+            "computed"
+          ]
+        },
+        {
+          "description": "Obtained by numerical simulation of a model.  Subject to model error and numerical error.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Compared against experimental / observational reference data within a declared tolerance.",
+          "type": "string",
+          "enum": [
+            "empirically_validated"
+          ]
+        },
+        {
+          "description": "Backed by a machine-checked or peer-reviewed mathematical proof.",
+          "type": "string",
+          "enum": [
+            "mathematically_proven"
+          ]
+        }
+      ]
+    },
+    "QuantityAssessment": {
+      "type": "object",
+      "required": [
+        "candidate_components",
+        "categories",
+        "missing_inputs",
+        "name",
+        "rationale",
+        "unit"
+      ],
+      "properties": {
+        "candidate_components": {
+          "description": "Components able to produce the quantity, best first.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QuantityCategory"
+          }
+        },
+        "missing_inputs": {
+          "description": "Inputs those components need that are not known (drives \"requires data\").",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "QuantityCategory": {
+      "description": "Epistemic / operational category of a quantity in the problem.",
+      "oneOf": [
+        {
+          "description": "Value supplied by the problem owner.",
+          "type": "string",
+          "enum": [
+            "known"
+          ]
+        },
+        {
+          "description": "Nothing in the problem or the catalogue determines it.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        },
+        {
+          "description": "A closed-form / exact component produces it from knowns.",
+          "type": "string",
+          "enum": [
+            "directly_computable"
+          ]
+        },
+        {
+          "description": "A model must be assembled (chain of components or new descriptor).",
+          "type": "string",
+          "enum": [
+            "requires_modelling"
+          ]
+        },
+        {
+          "description": "A simulation component produces it (result will be `Simulated`).",
+          "type": "string",
+          "enum": [
+            "simulable"
+          ]
+        },
+        {
+          "description": "No component can produce it: real data are required.",
+          "type": "string",
+          "enum": [
+            "requires_data"
+          ]
+        },
+        {
+          "description": "The owner asks for a mathematical demonstration.",
+          "type": "string",
+          "enum": [
+            "requires_proof"
+          ]
+        },
+        {
+          "description": "Simulable but no empirical reference exists: must be verified experimentally.",
+          "type": "string",
+          "enum": [
+            "requires_experimental_verification"
+          ]
+        }
+      ]
+    },
+    "ResourceRequirements": {
+      "description": "Hardware / software resources needed to run a component.",
+      "type": "object",
+      "properties": {
+        "cpu_cores": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "disk_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "gpu_count": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "gpu_memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "network": {
+          "description": "Whether network egress is required.",
+          "default": false,
+          "type": "boolean"
+        },
+        "wall_time_s": {
+          "description": "Expected wall-clock upper bound per task, in seconds (0 = unknown).",
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "SolutionCandidate": {
+      "description": "A candidate solution path identified by the analysis.",
+      "type": "object",
+      "required": [
+        "assumptions",
+        "component",
+        "compute_kind",
+        "expected_evidence",
+        "missing_inputs",
+        "name",
+        "produces",
+        "requires",
+        "resource_requirements"
+      ],
+      "properties": {
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "component": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "compute_kind": {
+          "type": "string"
+        },
+        "expected_evidence": {
+          "$ref": "#/definitions/EvidenceLevel"
+        },
+        "missing_inputs": {
+          "description": "Required inputs that are neither known nor design variables.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "produces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires": {
+          "description": "Inputs the component needs (port names).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resource_requirements": {
+          "$ref": "#/definitions/ResourceRequirements"
+        }
+      }
+    }
+  }
+}

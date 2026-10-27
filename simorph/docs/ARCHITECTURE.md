@@ -80,6 +80,16 @@ directeur fonctionne sans lui avec un planificateur déterministe fondé sur les
 manifestes (capacités, domaines, unités) et sur les règles de sélection de
 méthodes. Un LLM ne peut jamais promouvoir un niveau de preuve.
 
+#### Runtime de campagne (`services/campaign-runtime`)
+Le directeur ne dépend d'aucun moteur : il émet des `PlannedExperiment` et
+consomme des `ExperimentOutcome`. Le runtime de campagne implémente
+`ExperimentExecutor` avec les moteurs réels (expérimentation, optimisation
+avec sélection de méthode, incertitude), soumet chaque run à la validation
+indépendante, convertit les unités problème ↔ ports, et journalise tout dans
+la provenance. C'est lui, et non le directeur, qui évalue les critères de
+réussite figés (hachés) avec l'évaluateur d'expressions du moteur de
+validation.
+
 ### ARC-03 Moteur universel de modélisation (`crates/simorph-model-registry`, `services/model-factory`)
 `ModelDescriptor` pour chaque formalisme listé §3.3. La fabrique de modèles
 construit des descripteurs à partir d'un `ProblemSpec` et des composants

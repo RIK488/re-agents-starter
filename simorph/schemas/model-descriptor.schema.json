@@ -1,0 +1,715 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ModelDescriptor",
+  "description": "Declarative model description (§3.3: every model declares its inputs, outputs, units, assumptions, validity domain, parameters, dependencies, uncertainties and verification criteria).",
+  "type": "object",
+  "required": [
+    "formalism",
+    "id",
+    "inputs",
+    "name",
+    "outputs",
+    "uncertainty",
+    "version"
+  ],
+  "properties": {
+    "assumptions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "component": {
+      "description": "Component that executes this model, if any.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "dependencies": {
+      "description": "Other models this one depends on.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "description": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "domains": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "equations": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Equation"
+      }
+    },
+    "formalism": {
+      "$ref": "#/definitions/Formalism"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Port"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Port"
+      }
+    },
+    "parameters": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Quantity"
+      }
+    },
+    "states": {
+      "description": "Internal state variables (for dynamic models).",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Port"
+      }
+    },
+    "uncertainty": {
+      "$ref": "#/definitions/UncertaintyModel"
+    },
+    "validity_domain": {
+      "default": {
+        "conditions": [],
+        "ranges": {}
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ValidityDomain"
+        }
+      ]
+    },
+    "verification_criteria": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/VerificationCriterion"
+      }
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "Equation": {
+      "description": "A textual equation, e.g. `\"dT/dt = (P_in - h*A*(T - T_env)) / C\"`.",
+      "type": "object",
+      "required": [
+        "expression",
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expression": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "Formalism": {
+      "description": "Mathematical formalism of a model (§3.3 list).",
+      "oneOf": [
+        {
+          "description": "Ordinary differential equations.",
+          "type": "string",
+          "enum": [
+            "ode"
+          ]
+        },
+        {
+          "description": "Differential-algebraic equations.",
+          "type": "string",
+          "enum": [
+            "dae"
+          ]
+        },
+        {
+          "description": "Partial differential equations.",
+          "type": "string",
+          "enum": [
+            "pde"
+          ]
+        },
+        {
+          "description": "Algebraic system.",
+          "type": "string",
+          "enum": [
+            "algebraic"
+          ]
+        },
+        {
+          "description": "Logical / constraint model.",
+          "type": "string",
+          "enum": [
+            "logical"
+          ]
+        },
+        {
+          "description": "Probabilistic / Bayesian model.",
+          "type": "string",
+          "enum": [
+            "probabilistic"
+          ]
+        },
+        {
+          "description": "Dynamical system in the abstract sense (map / flow).",
+          "type": "string",
+          "enum": [
+            "dynamical_system"
+          ]
+        },
+        {
+          "description": "Graph / network.",
+          "type": "string",
+          "enum": [
+            "graph"
+          ]
+        },
+        {
+          "description": "Geometry / CAD.",
+          "type": "string",
+          "enum": [
+            "geometric"
+          ]
+        },
+        {
+          "description": "Multi-agent system.",
+          "type": "string",
+          "enum": [
+            "multi_agent"
+          ]
+        },
+        {
+          "description": "Discrete-event process.",
+          "type": "string",
+          "enum": [
+            "discrete_event"
+          ]
+        },
+        {
+          "description": "Continuous-time model.",
+          "type": "string",
+          "enum": [
+            "continuous"
+          ]
+        },
+        {
+          "description": "Hybrid discrete/continuous.",
+          "type": "string",
+          "enum": [
+            "hybrid"
+          ]
+        },
+        {
+          "description": "Data-driven (learned) model.",
+          "type": "string",
+          "enum": [
+            "data_driven"
+          ]
+        },
+        {
+          "description": "Surrogate / reduced-order model of another model.",
+          "type": "string",
+          "enum": [
+            "surrogate"
+          ]
+        },
+        {
+          "description": "Physics-based numerical model (FEM, CFD, …).",
+          "type": "string",
+          "enum": [
+            "physical_numerical"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "other"
+          ],
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Port": {
+      "description": "A named variable port of a model/component (input or output).",
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "range": {
+          "description": "Optional validity range in the declared unit.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "shape": {
+          "description": "Shape of the value: `[]` scalar, `[3]` vector, `[3,3]` matrix …",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0.0
+          }
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "Quantity": {
+      "description": "A scalar value with a unit expression (parsed by `simorph-units`) and an uncertainty model.",
+      "type": "object",
+      "required": [
+        "name",
+        "unit",
+        "value"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "default": {
+            "kind": "undeclared"
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uncertainty"
+            }
+          ]
+        },
+        "unit": {
+          "description": "Unit expression, e.g. `\"kg*m/s^2\"`, `\"W\"`, `\"1\"` for dimensionless.",
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Uncertainty": {
+      "description": "Uncertainty model attached to a quantity.",
+      "oneOf": [
+        {
+          "description": "No uncertainty declared (NOT the same as zero uncertainty).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "undeclared"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Exactly known (e.g. defined constants, integer counts).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Gaussian with standard deviation.",
+          "type": "object",
+          "required": [
+            "kind",
+            "std_dev"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "normal"
+              ]
+            },
+            "std_dev": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Uniform in [low, high].",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Log-normal with parameters of the underlying normal.",
+          "type": "object",
+          "required": [
+            "kind",
+            "mu",
+            "sigma"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "log_normal"
+              ]
+            },
+            "mu": {
+              "type": "number",
+              "format": "double"
+            },
+            "sigma": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Triangular distribution.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low",
+            "mode"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "triangular"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            },
+            "mode": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Empirical samples.",
+          "type": "object",
+          "required": [
+            "kind",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "samples"
+              ]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        {
+          "description": "Interval with no distributional assumption.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        }
+      ]
+    },
+    "UncertaintyModel": {
+      "description": "Declared uncertainty model of the component outputs.",
+      "oneOf": [
+        {
+          "description": "Component does not quantify its own uncertainty.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "none"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component reports a global relative error bound.",
+          "type": "object",
+          "required": [
+            "kind",
+            "rtol"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "relative_error_bound"
+              ]
+            },
+            "rtol": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Component reports per-output standard deviations.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "per_output_std_dev"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component returns samples / ensembles.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "ensemble"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Component returns an interval per output.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Free text description.",
+          "type": "object",
+          "required": [
+            "description",
+            "kind"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "described"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ValidityDomain": {
+      "description": "Declared validity domain: per-parameter ranges and textual conditions.",
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "description": "Conditions that cannot be expressed as ranges.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ranges": {
+          "description": "Parameter name -> (min, max) in the parameter's declared unit.",
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": [
+              {
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "type": "number",
+                "format": "double"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        }
+      }
+    },
+    "VerificationCriterion": {
+      "description": "How the model can be verified.",
+      "type": "object",
+      "required": [
+        "expression",
+        "name"
+      ],
+      "properties": {
+        "expression": {
+          "description": "Expression evaluated by the validation engine on model outputs, e.g. `\"abs(energy_drift) < 1e-6\"`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

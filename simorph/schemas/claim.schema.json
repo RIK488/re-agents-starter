@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Claim",
+  "description": "A claim made by SIMORPH about the world or about a model, with its epistemic level and the records that support it.",
+  "type": "object",
+  "required": [
+    "level",
+    "statement"
+  ],
+  "properties": {
+    "caveats": {
+      "description": "Free-form caveats (model assumptions, tolerance, data provenance).",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "level": {
+      "$ref": "#/definitions/EvidenceLevel"
+    },
+    "statement": {
+      "type": "string"
+    },
+    "supporting_runs": {
+      "description": "Runs whose outputs support the claim.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "validations": {
+      "description": "Validation records that justified the current level.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  },
+  "definitions": {
+    "EvidenceLevel": {
+      "description": "Epistemic status of a result or claim.",
+      "oneOf": [
+        {
+          "description": "A conjecture that has not been checked by any means.",
+          "type": "string",
+          "enum": [
+            "unverified_hypothesis"
+          ]
+        },
+        {
+          "description": "Obtained by direct computation from a closed-form or exact method (e.g. analytic formula, exact arithmetic, deterministic algorithm).",
+          "type": "string",
+          "enum": [
+            "computed"
+          ]
+        },
+        {
+          "description": "Obtained by numerical simulation of a model.  Subject to model error and numerical error.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Compared against experimental / observational reference data within a declared tolerance.",
+          "type": "string",
+          "enum": [
+            "empirically_validated"
+          ]
+        },
+        {
+          "description": "Backed by a machine-checked or peer-reviewed mathematical proof.",
+          "type": "string",
+          "enum": [
+            "mathematically_proven"
+          ]
+        }
+      ]
+    }
+  }
+}

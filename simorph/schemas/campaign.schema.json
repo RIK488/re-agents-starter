@@ -1,0 +1,1622 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Campaign",
+  "type": "object",
+  "required": [
+    "analysis",
+    "conclusions",
+    "contradictions",
+    "cost_used",
+    "events",
+    "hypotheses",
+    "id",
+    "outcomes",
+    "problem",
+    "programme",
+    "rules",
+    "runs_used",
+    "time_used_s"
+  ],
+  "properties": {
+    "analysis": {
+      "$ref": "#/definitions/ProblemAnalysis"
+    },
+    "conclusions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Conclusion"
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Contradiction"
+      }
+    },
+    "cost_used": {
+      "type": "number",
+      "format": "double"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CampaignEvent"
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Hypothesis"
+      }
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExperimentOutcome"
+      }
+    },
+    "problem": {
+      "$ref": "#/definitions/ProblemSpec"
+    },
+    "programme": {
+      "$ref": "#/definitions/Programme"
+    },
+    "rules": {
+      "$ref": "#/definitions/StoppingRules"
+    },
+    "runs_used": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "stop_reason": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StopReason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "time_used_s": {
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "definitions": {
+    "Attachment": {
+      "description": "Reference to an attached document, dataset, image or file.",
+      "type": "object",
+      "required": [
+        "location",
+        "media_type",
+        "name"
+      ],
+      "properties": {
+        "dataset_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "location": {
+          "description": "Path or URI.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "MIME type or extension.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Budget": {
+      "type": "object",
+      "required": [
+        "max_cost",
+        "max_runs",
+        "max_wall_time_s"
+      ],
+      "properties": {
+        "max_cost": {
+          "description": "Monetary/resource cap; `f64::MAX` means unlimited (JSON cannot carry infinity, so infinities are never used in serialised contracts).",
+          "type": "number",
+          "format": "double"
+        },
+        "max_runs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_wall_time_s": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "CampaignEvent": {
+      "type": "object",
+      "required": [
+        "detail",
+        "kind",
+        "refs",
+        "sequence",
+        "timestamp"
+      ],
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sequence": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ComparisonCriterion": {
+      "description": "Objective comparison criterion fixed before any experiment runs.",
+      "type": "object",
+      "required": [
+        "direction",
+        "hard_constraints",
+        "name",
+        "unit",
+        "variable",
+        "weight"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "hard_constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Conclusion": {
+      "type": "object",
+      "required": [
+        "caveats",
+        "hypotheses",
+        "level",
+        "statement",
+        "supporting_runs",
+        "unit",
+        "validations",
+        "value",
+        "variable"
+      ],
+      "properties": {
+        "caveats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "level": {
+          "$ref": "#/definitions/EvidenceLevel"
+        },
+        "statement": {
+          "type": "string"
+        },
+        "supporting_runs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "unit": {
+          "type": "string"
+        },
+        "validations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        },
+        "variable": {
+          "type": "string"
+        }
+      }
+    },
+    "Constraint": {
+      "description": "A constraint on a model output.",
+      "type": "object",
+      "required": [
+        "bound",
+        "kind",
+        "name",
+        "unit",
+        "variable"
+      ],
+      "properties": {
+        "bound": {
+          "type": "number",
+          "format": "double"
+        },
+        "hard": {
+          "description": "Hard constraints are never violated by an accepted solution; soft constraints are penalised.",
+          "default": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/ConstraintKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tolerance": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "type": "string"
+        }
+      }
+    },
+    "ConstraintKind": {
+      "oneOf": [
+        {
+          "description": "variable <= bound",
+          "type": "string",
+          "enum": [
+            "upper_bound"
+          ]
+        },
+        {
+          "description": "variable >= bound",
+          "type": "string",
+          "enum": [
+            "lower_bound"
+          ]
+        },
+        {
+          "description": "variable == bound (within tolerance)",
+          "type": "string",
+          "enum": [
+            "equality"
+          ]
+        }
+      ]
+    },
+    "Contradiction": {
+      "type": "object",
+      "required": [
+        "relative_gap",
+        "resolved",
+        "run_a",
+        "run_b",
+        "value_a",
+        "value_b",
+        "variable"
+      ],
+      "properties": {
+        "relative_gap": {
+          "type": "number",
+          "format": "double"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "run_a": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "run_b": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "value_a": {
+          "type": "number",
+          "format": "double"
+        },
+        "value_b": {
+          "type": "number",
+          "format": "double"
+        },
+        "variable": {
+          "type": "string"
+        }
+      }
+    },
+    "DesignVariable": {
+      "description": "A design variable the optimiser may change.",
+      "type": "object",
+      "required": [
+        "high",
+        "low",
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "high": {
+          "type": "number",
+          "format": "double"
+        },
+        "initial": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "integer": {
+          "default": false,
+          "type": "boolean"
+        },
+        "low": {
+          "type": "number",
+          "format": "double"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "Direction": {
+      "description": "Direction of an objective.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "minimize",
+            "maximize"
+          ]
+        },
+        {
+          "description": "Reach a target value (treated as minimising |f - target|).",
+          "type": "string",
+          "enum": [
+            "target"
+          ]
+        }
+      ]
+    },
+    "EvidenceLevel": {
+      "description": "Epistemic status of a result or claim.",
+      "oneOf": [
+        {
+          "description": "A conjecture that has not been checked by any means.",
+          "type": "string",
+          "enum": [
+            "unverified_hypothesis"
+          ]
+        },
+        {
+          "description": "Obtained by direct computation from a closed-form or exact method (e.g. analytic formula, exact arithmetic, deterministic algorithm).",
+          "type": "string",
+          "enum": [
+            "computed"
+          ]
+        },
+        {
+          "description": "Obtained by numerical simulation of a model.  Subject to model error and numerical error.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Compared against experimental / observational reference data within a declared tolerance.",
+          "type": "string",
+          "enum": [
+            "empirically_validated"
+          ]
+        },
+        {
+          "description": "Backed by a machine-checked or peer-reviewed mathematical proof.",
+          "type": "string",
+          "enum": [
+            "mathematically_proven"
+          ]
+        }
+      ]
+    },
+    "ExperimentOutcome": {
+      "description": "Outcome of an executed experiment.",
+      "type": "object",
+      "required": [
+        "cost",
+        "criteria",
+        "criteria_hash",
+        "experiment",
+        "information_gain",
+        "runs",
+        "wall_time_s"
+      ],
+      "properties": {
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "criteria": {
+          "description": "(criterion name, passed)",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "criteria_hash": {
+          "description": "Hash of the criteria actually evaluated; must equal the planned hash.",
+          "type": "string"
+        },
+        "experiment": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "information_gain": {
+          "description": "Information gain estimate (e.g. variance reduction on objectives), ≥ 0.",
+          "type": "number",
+          "format": "double"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RunSummary"
+          }
+        },
+        "wall_time_s": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "ExperimentPurpose": {
+      "oneOf": [
+        {
+          "description": "Run the component's declared reference cases (validity of the tool).",
+          "type": "string",
+          "enum": [
+            "reference_check"
+          ]
+        },
+        {
+          "description": "Screening of design variables (which ones matter).",
+          "type": "string",
+          "enum": [
+            "screening"
+          ]
+        },
+        {
+          "description": "Global sensitivity / uncertainty propagation.",
+          "type": "string",
+          "enum": [
+            "sensitivity"
+          ]
+        },
+        {
+          "description": "Optimisation of the objectives over the design variables.",
+          "type": "string",
+          "enum": [
+            "optimisation"
+          ]
+        },
+        {
+          "description": "High-fidelity verification of the retained solution.",
+          "type": "string",
+          "enum": [
+            "verification"
+          ]
+        },
+        {
+          "description": "Comparison of prediction with supplied observations.",
+          "type": "string",
+          "enum": [
+            "calibration"
+          ]
+        },
+        {
+          "description": "Search for counter-examples to a hypothesis / constraint.",
+          "type": "string",
+          "enum": [
+            "counter_example"
+          ]
+        }
+      ]
+    },
+    "Hypothesis": {
+      "description": "Hypothesis formulated by the director or the user.",
+      "type": "object",
+      "required": [
+        "falsification_criterion",
+        "id",
+        "statement"
+      ],
+      "properties": {
+        "falsification_criterion": {
+          "description": "What observation would falsify it.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "notes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "statement": {
+          "type": "string"
+        },
+        "status": {
+          "default": "open",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HypothesisStatus"
+            }
+          ]
+        }
+      }
+    },
+    "HypothesisStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "supported",
+        "refuted",
+        "inconclusive",
+        "abandoned"
+      ]
+    },
+    "Objective": {
+      "description": "An objective declared by the problem owner.",
+      "type": "object",
+      "required": [
+        "direction",
+        "name",
+        "unit",
+        "variable"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "description": "Output variable name of the model this objective reads.",
+          "type": "string"
+        },
+        "weight": {
+          "description": "Relative weight for scalarisation when the user wants a single score.",
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "PlannedExperiment": {
+      "type": "object",
+      "required": [
+        "component",
+        "component_name",
+        "criteria_hash",
+        "design_variables",
+        "fidelity",
+        "fixed_inputs",
+        "hypotheses",
+        "id",
+        "n_points",
+        "name",
+        "prerequisites",
+        "purpose",
+        "success_criteria",
+        "tradeoff"
+      ],
+      "properties": {
+        "component": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "component_name": {
+          "type": "string"
+        },
+        "criteria_hash": {
+          "description": "Hash of the success criteria at planning time.",
+          "type": "string"
+        },
+        "design_variables": {
+          "description": "Design variables explored by this experiment.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DesignVariable"
+          }
+        },
+        "fidelity": {
+          "type": "number",
+          "format": "double"
+        },
+        "fixed_inputs": {
+          "description": "Inputs fixed from the problem's knowns (name → value in the problem's unit).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "n_points": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "name": {
+          "type": "string"
+        },
+        "prerequisites": {
+          "description": "Experiments that must have succeeded before this one runs.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "purpose": {
+          "$ref": "#/definitions/ExperimentPurpose"
+        },
+        "success_criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SuccessCriterion"
+          }
+        },
+        "tradeoff": {
+          "$ref": "#/definitions/Tradeoff"
+        }
+      }
+    },
+    "ProblemAnalysis": {
+      "type": "object",
+      "required": [
+        "assessments",
+        "comparison_criteria",
+        "dimensional_issues",
+        "disciplines",
+        "improvement_opportunities",
+        "problem_id",
+        "solution_candidates"
+      ],
+      "properties": {
+        "assessments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QuantityAssessment"
+          }
+        },
+        "comparison_criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ComparisonCriterion"
+          }
+        },
+        "dimensional_issues": {
+          "description": "Unit problems found in the specification (objective/constraint units incompatible with producing ports).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disciplines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "improvement_opportunities": {
+          "description": "Suggested improvements to models/tools/methods (§2 item 11).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "problem_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "solution_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SolutionCandidate"
+          }
+        }
+      }
+    },
+    "ProblemSpec": {
+      "description": "The full problem specification.",
+      "type": "object",
+      "required": [
+        "description",
+        "id",
+        "title"
+      ],
+      "properties": {
+        "attachments": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Attachment"
+          }
+        },
+        "budget": {
+          "description": "Budget caps declared by the owner.",
+          "default": {
+            "max_cost": 1.7976931348623157e+308,
+            "max_runs": 10000,
+            "max_wall_time_s": 3600.0
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Budget"
+            }
+          ]
+        },
+        "constraints": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Constraint"
+          }
+        },
+        "description": {
+          "description": "Natural-language description.",
+          "type": "string"
+        },
+        "design_variables": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DesignVariable"
+          }
+        },
+        "domains": {
+          "description": "Discipline tags (free-form, e.g. \"aerospace\", \"thermal\", \"power\").",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hypotheses": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Hypothesis"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "knowns": {
+          "description": "Known quantities with units and uncertainties.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Quantity"
+          }
+        },
+        "objectives": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Objective"
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "tradeoff_weights": {
+          "description": "Weights for the precision/time/cost/risk/information trade-off.",
+          "default": {
+            "compute_time": 1.0,
+            "cost": 1.0,
+            "information_value": 1.0,
+            "precision": 1.0,
+            "risk": 1.0
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/TradeoffWeights"
+            }
+          ]
+        },
+        "unknowns": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Unknown"
+          }
+        }
+      }
+    },
+    "Programme": {
+      "type": "object",
+      "required": [
+        "experiments",
+        "problem_id",
+        "weights"
+      ],
+      "properties": {
+        "experiments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PlannedExperiment"
+          }
+        },
+        "problem_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "weights": {
+          "$ref": "#/definitions/TradeoffWeights"
+        }
+      }
+    },
+    "Quantity": {
+      "description": "A scalar value with a unit expression (parsed by `simorph-units`) and an uncertainty model.",
+      "type": "object",
+      "required": [
+        "name",
+        "unit",
+        "value"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "default": {
+            "kind": "undeclared"
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uncertainty"
+            }
+          ]
+        },
+        "unit": {
+          "description": "Unit expression, e.g. `\"kg*m/s^2\"`, `\"W\"`, `\"1\"` for dimensionless.",
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "QuantityAssessment": {
+      "type": "object",
+      "required": [
+        "candidate_components",
+        "categories",
+        "missing_inputs",
+        "name",
+        "rationale",
+        "unit"
+      ],
+      "properties": {
+        "candidate_components": {
+          "description": "Components able to produce the quantity, best first.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QuantityCategory"
+          }
+        },
+        "missing_inputs": {
+          "description": "Inputs those components need that are not known (drives \"requires data\").",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "QuantityCategory": {
+      "description": "Epistemic / operational category of a quantity in the problem.",
+      "oneOf": [
+        {
+          "description": "Value supplied by the problem owner.",
+          "type": "string",
+          "enum": [
+            "known"
+          ]
+        },
+        {
+          "description": "Nothing in the problem or the catalogue determines it.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        },
+        {
+          "description": "A closed-form / exact component produces it from knowns.",
+          "type": "string",
+          "enum": [
+            "directly_computable"
+          ]
+        },
+        {
+          "description": "A model must be assembled (chain of components or new descriptor).",
+          "type": "string",
+          "enum": [
+            "requires_modelling"
+          ]
+        },
+        {
+          "description": "A simulation component produces it (result will be `Simulated`).",
+          "type": "string",
+          "enum": [
+            "simulable"
+          ]
+        },
+        {
+          "description": "No component can produce it: real data are required.",
+          "type": "string",
+          "enum": [
+            "requires_data"
+          ]
+        },
+        {
+          "description": "The owner asks for a mathematical demonstration.",
+          "type": "string",
+          "enum": [
+            "requires_proof"
+          ]
+        },
+        {
+          "description": "Simulable but no empirical reference exists: must be verified experimentally.",
+          "type": "string",
+          "enum": [
+            "requires_experimental_verification"
+          ]
+        }
+      ]
+    },
+    "ResourceRequirements": {
+      "description": "Hardware / software resources needed to run a component.",
+      "type": "object",
+      "properties": {
+        "cpu_cores": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "disk_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "gpu_count": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "gpu_memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "memory_mb": {
+          "default": 0,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "network": {
+          "description": "Whether network egress is required.",
+          "default": false,
+          "type": "boolean"
+        },
+        "wall_time_s": {
+          "description": "Expected wall-clock upper bound per task, in seconds (0 = unknown).",
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "RunSummary": {
+      "description": "Summary of one run as seen by the director (produced by the executor after independent validation).",
+      "type": "object",
+      "required": [
+        "evidence",
+        "inputs",
+        "outputs",
+        "run_id",
+        "valid"
+      ],
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "description": "Evidence level *granted by the validator* (never the component's claim).",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EvidenceLevel"
+            }
+          ]
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "run_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "validation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    },
+    "SolutionCandidate": {
+      "description": "A candidate solution path identified by the analysis.",
+      "type": "object",
+      "required": [
+        "assumptions",
+        "component",
+        "compute_kind",
+        "expected_evidence",
+        "missing_inputs",
+        "name",
+        "produces",
+        "requires",
+        "resource_requirements"
+      ],
+      "properties": {
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "component": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "compute_kind": {
+          "type": "string"
+        },
+        "expected_evidence": {
+          "$ref": "#/definitions/EvidenceLevel"
+        },
+        "missing_inputs": {
+          "description": "Required inputs that are neither known nor design variables.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "produces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires": {
+          "description": "Inputs the component needs (port names).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resource_requirements": {
+          "$ref": "#/definitions/ResourceRequirements"
+        }
+      }
+    },
+    "StopReason": {
+      "type": "string",
+      "enum": [
+        "programme_completed",
+        "budget_runs_exhausted",
+        "budget_time_exhausted",
+        "budget_cost_exhausted",
+        "no_information_gain",
+        "unresolved_contradictions",
+        "cancelled",
+        "prerequisite_failed"
+      ]
+    },
+    "StoppingRules": {
+      "type": "object",
+      "required": [
+        "contradiction_tolerance",
+        "max_unproductive",
+        "max_unresolved_contradictions",
+        "min_information_gain"
+      ],
+      "properties": {
+        "contradiction_tolerance": {
+          "description": "Relative gap above which two validated values of the same variable contradict.",
+          "type": "number",
+          "format": "double"
+        },
+        "max_unproductive": {
+          "description": "Stop after this many consecutive experiments with information gain below `min_information_gain`.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "max_unresolved_contradictions": {
+          "description": "Stop when unresolved contradictions reach this count.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "min_information_gain": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "SuccessCriterion": {
+      "description": "A success criterion is an expression over outputs/metrics evaluated by the validation engine.  It is written *before* execution and hashed.",
+      "type": "object",
+      "required": [
+        "description",
+        "expression",
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "Tradeoff": {
+      "type": "object",
+      "required": [
+        "compute_time_s",
+        "cost",
+        "information_value",
+        "precision",
+        "risk"
+      ],
+      "properties": {
+        "compute_time_s": {
+          "description": "Expected wall-clock seconds.",
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "description": "Monetary or resource cost in arbitrary consistent units.",
+          "type": "number",
+          "format": "double"
+        },
+        "information_value": {
+          "description": "Expected reduction of uncertainty on the decision variable, in nats or any consistent information measure.",
+          "type": "number",
+          "format": "double"
+        },
+        "precision": {
+          "description": "Expected relative precision (0 = useless, 1 = exact).",
+          "type": "number",
+          "format": "double"
+        },
+        "risk": {
+          "description": "Probability-like risk of failure or of misleading results (0–1).",
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "TradeoffWeights": {
+      "description": "Weights for scoring a [`Tradeoff`].  Weights are declared by the problem owner, not by the director, so that the director cannot move the goal posts of its own evaluation.",
+      "type": "object",
+      "required": [
+        "compute_time",
+        "cost",
+        "information_value",
+        "precision",
+        "risk"
+      ],
+      "properties": {
+        "compute_time": {
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "information_value": {
+          "type": "number",
+          "format": "double"
+        },
+        "precision": {
+          "type": "number",
+          "format": "double"
+        },
+        "risk": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Uncertainty": {
+      "description": "Uncertainty model attached to a quantity.",
+      "oneOf": [
+        {
+          "description": "No uncertainty declared (NOT the same as zero uncertainty).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "undeclared"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Exactly known (e.g. defined constants, integer counts).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Gaussian with standard deviation.",
+          "type": "object",
+          "required": [
+            "kind",
+            "std_dev"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "normal"
+              ]
+            },
+            "std_dev": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Uniform in [low, high].",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Log-normal with parameters of the underlying normal.",
+          "type": "object",
+          "required": [
+            "kind",
+            "mu",
+            "sigma"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "log_normal"
+              ]
+            },
+            "mu": {
+              "type": "number",
+              "format": "double"
+            },
+            "sigma": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Triangular distribution.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low",
+            "mode"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "triangular"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            },
+            "mode": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Empirical samples.",
+          "type": "object",
+          "required": [
+            "kind",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "samples"
+              ]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        {
+          "description": "Interval with no distributional assumption.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        }
+      ]
+    },
+    "Unknown": {
+      "description": "A quantity that is unknown and that SIMORPH must determine or bound.",
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "prior": {
+          "description": "Prior interval if any.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

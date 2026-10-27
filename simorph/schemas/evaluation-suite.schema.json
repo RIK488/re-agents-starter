@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SealedSuite",
+  "description": "A sealed suite: immutable, content-addressed.",
+  "type": "object",
+  "required": [
+    "hash",
+    "suite"
+  ],
+  "properties": {
+    "hash": {
+      "type": "string"
+    },
+    "suite": {
+      "$ref": "#/definitions/EvaluationSuite"
+    }
+  },
+  "definitions": {
+    "EvalTask": {
+      "type": "object",
+      "required": [
+        "component",
+        "inputs",
+        "name",
+        "seeds"
+      ],
+      "properties": {
+        "component": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "inputs": {
+          "description": "Fixed inputs of the task (candidate parameters override these).",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "name": {
+          "type": "string"
+        },
+        "seeds": {
+          "description": "Seeds used for repeated evaluation.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      }
+    },
+    "EvaluationSuite": {
+      "type": "object",
+      "required": [
+        "metrics",
+        "name",
+        "tasks",
+        "version"
+      ],
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MetricSpec"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EvalTask"
+          }
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "MetricKind": {
+      "description": "What a metric measures.  Only `Quality`-like kinds may be the primary acceptance metric; `Speed`/`Cost` can never justify acceptance on their own.",
+      "oneOf": [
+        {
+          "description": "Correctness / reasoning quality (accuracy, exact match, loss…).",
+          "type": "string",
+          "enum": [
+            "quality"
+          ]
+        },
+        {
+          "description": "Robustness under perturbation.",
+          "type": "string",
+          "enum": [
+            "robustness"
+          ]
+        },
+        {
+          "description": "Held-out generalisation.",
+          "type": "string",
+          "enum": [
+            "generalisation"
+          ]
+        },
+        {
+          "description": "Latency / throughput.",
+          "type": "string",
+          "enum": [
+            "speed"
+          ]
+        },
+        {
+          "description": "Compute, memory or monetary cost.",
+          "type": "string",
+          "enum": [
+            "cost"
+          ]
+        }
+      ]
+    },
+    "MetricSpec": {
+      "type": "object",
+      "required": [
+        "higher_is_better",
+        "kind",
+        "name",
+        "output",
+        "protected"
+      ],
+      "properties": {
+        "higher_is_better": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/MetricKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output": {
+          "description": "Output of the task component read for this metric.",
+          "type": "string"
+        },
+        "protected": {
+          "description": "Protected metrics may never regress beyond `regression_tolerance`.",
+          "type": "boolean"
+        },
+        "regression_tolerance": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    }
+  }
+}

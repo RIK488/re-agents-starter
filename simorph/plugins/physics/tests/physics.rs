@@ -380,7 +380,7 @@ fn pd_controller_converges_to_target_attitude() {
 #[test]
 fn discovery_and_manifest_integrity() {
     let ms = simorph_plugin_physics::manifests();
-    assert_eq!(ms.len(), 5);
+    assert_eq!(ms.len(), 6);
     for m in &ms {
         m.validate_structure().unwrap();
         assert!(!m.assumptions.is_empty(), "{} has no assumptions", m.name);

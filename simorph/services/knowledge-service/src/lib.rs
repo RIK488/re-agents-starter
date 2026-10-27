@@ -482,6 +482,7 @@ mod tests {
                     validation: Some(ValidationId::new()),
                     valid: true,
                     error: None,
+                    reference_case: false,
                 });
             }
             Ok(dir::ExperimentOutcome {

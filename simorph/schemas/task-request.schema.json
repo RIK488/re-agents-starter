@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskRequest",
+  "description": "Inputs of a task: named values (JSON) + numeric seed + fidelity hint.",
+  "type": "object",
+  "required": [
+    "component",
+    "inputs",
+    "run_id"
+  ],
+  "properties": {
+    "component": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "config": {
+      "description": "Free-form configuration the component understands.",
+      "default": null
+    },
+    "fidelity": {
+      "description": "Fidelity level requested by uncertainty-guided simulation (§8). 0 = cheapest approximation, 1 = full fidelity.",
+      "default": 1.0,
+      "type": "number",
+      "format": "double"
+    },
+    "inputs": {
+      "description": "Named inputs; values follow the component's `input_schema`.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "seed": {
+      "description": "Seed for deterministic reproduction.  `None` means \"component default\".",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0.0
+    }
+  }
+}

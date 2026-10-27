@@ -1,0 +1,678 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProblemSpec",
+  "description": "The full problem specification.",
+  "type": "object",
+  "required": [
+    "description",
+    "id",
+    "title"
+  ],
+  "properties": {
+    "attachments": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Attachment"
+      }
+    },
+    "budget": {
+      "description": "Budget caps declared by the owner.",
+      "default": {
+        "max_cost": 1.7976931348623157e+308,
+        "max_runs": 10000,
+        "max_wall_time_s": 3600.0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/Budget"
+        }
+      ]
+    },
+    "constraints": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Constraint"
+      }
+    },
+    "description": {
+      "description": "Natural-language description.",
+      "type": "string"
+    },
+    "design_variables": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/DesignVariable"
+      }
+    },
+    "domains": {
+      "description": "Discipline tags (free-form, e.g. \"aerospace\", \"thermal\", \"power\").",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hypotheses": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Hypothesis"
+      }
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "knowns": {
+      "description": "Known quantities with units and uncertainties.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Quantity"
+      }
+    },
+    "objectives": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Objective"
+      }
+    },
+    "title": {
+      "type": "string"
+    },
+    "tradeoff_weights": {
+      "description": "Weights for the precision/time/cost/risk/information trade-off.",
+      "default": {
+        "compute_time": 1.0,
+        "cost": 1.0,
+        "information_value": 1.0,
+        "precision": 1.0,
+        "risk": 1.0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/TradeoffWeights"
+        }
+      ]
+    },
+    "unknowns": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Unknown"
+      }
+    }
+  },
+  "definitions": {
+    "Attachment": {
+      "description": "Reference to an attached document, dataset, image or file.",
+      "type": "object",
+      "required": [
+        "location",
+        "media_type",
+        "name"
+      ],
+      "properties": {
+        "dataset_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "location": {
+          "description": "Path or URI.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "MIME type or extension.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Budget": {
+      "type": "object",
+      "required": [
+        "max_cost",
+        "max_runs",
+        "max_wall_time_s"
+      ],
+      "properties": {
+        "max_cost": {
+          "description": "Monetary/resource cap; `f64::MAX` means unlimited (JSON cannot carry infinity, so infinities are never used in serialised contracts).",
+          "type": "number",
+          "format": "double"
+        },
+        "max_runs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_wall_time_s": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Constraint": {
+      "description": "A constraint on a model output.",
+      "type": "object",
+      "required": [
+        "bound",
+        "kind",
+        "name",
+        "unit",
+        "variable"
+      ],
+      "properties": {
+        "bound": {
+          "type": "number",
+          "format": "double"
+        },
+        "hard": {
+          "description": "Hard constraints are never violated by an accepted solution; soft constraints are penalised.",
+          "default": true,
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/ConstraintKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tolerance": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "type": "string"
+        }
+      }
+    },
+    "ConstraintKind": {
+      "oneOf": [
+        {
+          "description": "variable <= bound",
+          "type": "string",
+          "enum": [
+            "upper_bound"
+          ]
+        },
+        {
+          "description": "variable >= bound",
+          "type": "string",
+          "enum": [
+            "lower_bound"
+          ]
+        },
+        {
+          "description": "variable == bound (within tolerance)",
+          "type": "string",
+          "enum": [
+            "equality"
+          ]
+        }
+      ]
+    },
+    "DesignVariable": {
+      "description": "A design variable the optimiser may change.",
+      "type": "object",
+      "required": [
+        "high",
+        "low",
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "high": {
+          "type": "number",
+          "format": "double"
+        },
+        "initial": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "integer": {
+          "default": false,
+          "type": "boolean"
+        },
+        "low": {
+          "type": "number",
+          "format": "double"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    },
+    "Direction": {
+      "description": "Direction of an objective.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "minimize",
+            "maximize"
+          ]
+        },
+        {
+          "description": "Reach a target value (treated as minimising |f - target|).",
+          "type": "string",
+          "enum": [
+            "target"
+          ]
+        }
+      ]
+    },
+    "Hypothesis": {
+      "description": "Hypothesis formulated by the director or the user.",
+      "type": "object",
+      "required": [
+        "falsification_criterion",
+        "id",
+        "statement"
+      ],
+      "properties": {
+        "falsification_criterion": {
+          "description": "What observation would falsify it.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "notes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "statement": {
+          "type": "string"
+        },
+        "status": {
+          "default": "open",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HypothesisStatus"
+            }
+          ]
+        }
+      }
+    },
+    "HypothesisStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "supported",
+        "refuted",
+        "inconclusive",
+        "abandoned"
+      ]
+    },
+    "Objective": {
+      "description": "An objective declared by the problem owner.",
+      "type": "object",
+      "required": [
+        "direction",
+        "name",
+        "unit",
+        "variable"
+      ],
+      "properties": {
+        "direction": {
+          "$ref": "#/definitions/Direction"
+        },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "variable": {
+          "description": "Output variable name of the model this objective reads.",
+          "type": "string"
+        },
+        "weight": {
+          "description": "Relative weight for scalarisation when the user wants a single score.",
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Quantity": {
+      "description": "A scalar value with a unit expression (parsed by `simorph-units`) and an uncertainty model.",
+      "type": "object",
+      "required": [
+        "name",
+        "unit",
+        "value"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "uncertainty": {
+          "default": {
+            "kind": "undeclared"
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Uncertainty"
+            }
+          ]
+        },
+        "unit": {
+          "description": "Unit expression, e.g. `\"kg*m/s^2\"`, `\"W\"`, `\"1\"` for dimensionless.",
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "TradeoffWeights": {
+      "description": "Weights for scoring a [`Tradeoff`].  Weights are declared by the problem owner, not by the director, so that the director cannot move the goal posts of its own evaluation.",
+      "type": "object",
+      "required": [
+        "compute_time",
+        "cost",
+        "information_value",
+        "precision",
+        "risk"
+      ],
+      "properties": {
+        "compute_time": {
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "information_value": {
+          "type": "number",
+          "format": "double"
+        },
+        "precision": {
+          "type": "number",
+          "format": "double"
+        },
+        "risk": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Uncertainty": {
+      "description": "Uncertainty model attached to a quantity.",
+      "oneOf": [
+        {
+          "description": "No uncertainty declared (NOT the same as zero uncertainty).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "undeclared"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Exactly known (e.g. defined constants, integer counts).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "exact"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Gaussian with standard deviation.",
+          "type": "object",
+          "required": [
+            "kind",
+            "std_dev"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "normal"
+              ]
+            },
+            "std_dev": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Uniform in [low, high].",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Log-normal with parameters of the underlying normal.",
+          "type": "object",
+          "required": [
+            "kind",
+            "mu",
+            "sigma"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "log_normal"
+              ]
+            },
+            "mu": {
+              "type": "number",
+              "format": "double"
+            },
+            "sigma": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Triangular distribution.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low",
+            "mode"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "triangular"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            },
+            "mode": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Empirical samples.",
+          "type": "object",
+          "required": [
+            "kind",
+            "values"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "samples"
+              ]
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        {
+          "description": "Interval with no distributional assumption.",
+          "type": "object",
+          "required": [
+            "high",
+            "kind",
+            "low"
+          ],
+          "properties": {
+            "high": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "interval"
+              ]
+            },
+            "low": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        }
+      ]
+    },
+    "Unknown": {
+      "description": "A quantity that is unknown and that SIMORPH must determine or bound.",
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ],
+      "properties": {
+        "description": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "prior": {
+          "description": "Prior interval if any.",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "number",
+              "format": "double"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "unit": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

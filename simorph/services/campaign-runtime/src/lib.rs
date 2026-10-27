@@ -182,10 +182,16 @@ impl CampaignRuntime {
             &rec,
             &[],
         );
+        // Outputs are reported in the *problem's* units (objectives, constraints,
+        // unknowns) so that criteria and conclusions are expressed as the owner
+        // declared them; raw port-unit values stay in the TaskResult (provenance).
         let outputs: IndexMap<String, f64> = res
             .outputs
             .iter()
-            .filter_map(|(k, v)| v.as_f64().map(|x| (k.clone(), x)))
+            .filter_map(|(k, v)| {
+                v.as_f64()
+                    .map(|x| (k.clone(), self.to_problem_unit(m, k, x)))
+            })
             .collect();
         RunSummary {
             run_id: res.run_id,
@@ -195,6 +201,42 @@ impl CampaignRuntime {
             validation: Some(rec.id),
             valid: rec.all_passed(),
             error: None,
+            reference_case: false,
+        }
+    }
+
+    /// Unit declared by the problem for an output variable (objective,
+    /// constraint or unknown), if any.
+    fn problem_output_unit(&self, name: &str) -> Option<String> {
+        self.problem
+            .objectives
+            .iter()
+            .find(|o| o.variable == name)
+            .map(|o| o.unit.clone())
+            .or_else(|| {
+                self.problem
+                    .constraints
+                    .iter()
+                    .find(|c| c.variable == name)
+                    .map(|c| c.unit.clone())
+            })
+            .or_else(|| {
+                self.problem
+                    .unknowns
+                    .iter()
+                    .find(|u| u.name == name)
+                    .map(|u| u.unit.clone())
+            })
+    }
+
+    /// Convert a component output (port unit) into the problem's unit.
+    fn to_problem_unit(&self, m: &ComponentManifest, name: &str, value: f64) -> f64 {
+        match (
+            m.output_schema.iter().find(|p| p.name == name),
+            self.problem_output_unit(name),
+        ) {
+            (Some(p), Some(u)) => simorph_units::convert(value, &p.unit, &u).unwrap_or(value),
+            _ => value,
         }
     }
 
@@ -279,7 +321,9 @@ impl CampaignRuntime {
                         .iter()
                         .filter_map(|(k, v)| v.as_f64().map(|x| (k.clone(), x)))
                         .collect();
-                    runs.push(self.validate_run(&m, inputs, &res, vec![chk.clone()]));
+                    let mut summary = self.validate_run(&m, inputs, &res, vec![chk.clone()]);
+                    summary.reference_case = true;
+                    runs.push(summary);
                 }
                 Err(e) => runs.push(RunSummary {
                     run_id: req.run_id,
@@ -289,6 +333,7 @@ impl CampaignRuntime {
                     validation: None,
                     valid: false,
                     error: Some(e.to_string()),
+                    reference_case: true,
                 }),
             }
         }
@@ -364,6 +409,7 @@ impl CampaignRuntime {
                     validation: None,
                     valid: false,
                     error: Some(format!("{:?}", r.status)),
+                    reference_case: false,
                 }),
             }
         }
@@ -558,16 +604,23 @@ impl CampaignRuntime {
             runs.push(s);
         }
         let mut vars = IndexMap::new();
+        // Compare in problem units: the best validated run of this optimisation
+        // against the best screening run (both scalarised by `objective_scalar`).
+        let best_here = runs
+            .iter()
+            .filter(|r| r.valid)
+            .filter_map(|r| self.objective_scalar(&r.outputs))
+            .fold(f64::INFINITY, f64::min);
         let improved = self
             .best_screening
             .get(&m.id)
-            .map(|(f0, _)| result.best_f < *f0)
+            .map(|(f0, _)| best_here < *f0)
             .unwrap_or(true);
         vars.insert(
             "best_objective_improved".into(),
             if improved { 1.0 } else { 0.0 },
         );
-        vars.insert("best_objective".into(), result.best_f);
+        vars.insert("best_objective".into(), best_here);
         vars.insert("evaluations".into(), result.evaluations as f64);
         vars.insert("converged".into(), if result.converged { 1.0 } else { 0.0 });
         if let Some(b) = &best_run {
@@ -580,7 +633,7 @@ impl CampaignRuntime {
         let gain = self
             .best_screening
             .get(&m.id)
-            .map(|(f0, _)| ((f0 - result.best_f) / f0.abs().max(1e-12)).max(0.0))
+            .map(|(f0, _)| ((f0 - best_here) / f0.abs().max(1e-12)).max(0.0))
             .unwrap_or(1.0);
         Ok(self.outcome(planned, runs, vars, gain, t0.elapsed().as_secs_f64()))
     }

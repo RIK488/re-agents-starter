@@ -190,6 +190,8 @@ pub fn run_campaign(
         &[prob_rec],
     )?;
     outcome?;
+    // Scientific memory (§11): every campaign is ingested into the workspace knowledge graph.
+    crate::factories::remember_campaign(ws, &campaign)?;
     Ok(campaign)
 }
 
